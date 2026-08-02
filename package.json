@@ -1,0 +1,17 @@
+{
+  "name": "omp-shipment-tracker-crm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Open Marketplace shipment CRM and transaction control tower",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "initdb": "node db/init.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  }
+}

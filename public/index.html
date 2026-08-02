@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OMP Shipment Tracker · Recykal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand-lockup" style="display:flex;align-items:center;gap:12px">
+      <div class="brand-mark"><img src="/recykal-mark.png" alt="Recykal" /></div>
+      <div class="brand-copy"><span>Recykal · Open Marketplace</span><h1>Shipment Tracker</h1></div>
+    </div>
+    <div></div>
+    <div class="header-meta">
+      <label class="login-label">Signed in as <select id="userSelect"></select></label>
+      <span id="userName">Local Admin</span>
+    </div>
+  </header>
+
+  <nav class="top-tabs">
+    <button class="view-tab active" data-view="overview">Overview</button>
+    <button class="view-tab" data-view="work">My Work</button>
+    <button class="view-tab" data-view="crm">Shipment CRM</button>
+    <button class="view-tab" data-view="pipeline">Pipeline</button>
+    <button class="view-tab" data-view="insights">Why Pending</button>
+    <button class="view-tab" data-view="trends">Trends</button>
+  </nav>
+
+  <main class="page">
+    <section class="page-view active" id="view-overview"></section>
+    <section class="page-view" id="view-work"></section>
+    <section class="page-view" id="view-crm"></section>
+    <section class="page-view" id="view-pipeline"></section>
+    <section class="page-view" id="view-insights"></section>
+    <section class="page-view" id="view-trends"></section>
+  </main>
+
+  <div class="toast-wrap" id="toastWrap"></div>
+
+  <!-- shared core first, then one file per page, then boot -->
+  <script src="/core.js"></script>
+  <script src="/pages/overview.js"></script>
+  <script src="/pages/work.js"></script>
+  <script src="/pages/crm.js"></script>
+  <script src="/pages/pipeline.js"></script>
+  <script src="/pages/insights.js"></script>
+  <script src="/pages/trends.js"></script>
+  <script>
+    OMP.boot().catch(e => { const pre = document.createElement('pre'); pre.className = 'err'; pre.textContent = String((e && e.message) || e); document.body.innerHTML = ''; document.body.appendChild(pre); });
+  </script>
+</body>
+</html>
