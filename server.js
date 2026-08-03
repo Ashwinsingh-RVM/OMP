@@ -398,6 +398,29 @@ function scopeShipments(shipments, user) {
   const key = nameKey(user.name);
   return shipments.filter((s) => shipmentNames(s).includes(key));
 }
+// Optional shared-password gate for deployed instances. When APP_PASSWORD is set
+// (e.g. on Railway) every request needs HTTP Basic Auth. In local dev it is unset,
+// so there is no gate and the server is bound to 127.0.0.1 anyway.
+function checkBasicAuth(req, res) {
+  const pass = process.env.APP_PASSWORD;
+  if (!pass) return true;
+  const hdr = String(req.headers.authorization || "");
+  const m = hdr.match(/^Basic (.+)$/);
+  if (m) {
+    let supplied = "";
+    try {
+      const decoded = Buffer.from(m[1], "base64").toString("utf8");
+      const idx = decoded.indexOf(":");
+      supplied = idx >= 0 ? decoded.slice(idx + 1) : decoded;
+    } catch (e) { supplied = ""; }
+    const a = Buffer.from(supplied), b = Buffer.from(pass);
+    if (a.length === b.length && crypto.timingSafeEqual(a, b)) return true;
+  }
+  res.writeHead(401, { "WWW-Authenticate": 'Basic realm="OMP Shipment Tracker", charset="UTF-8"', "Content-Type": "text/plain; charset=utf-8", ...securityHeaders() });
+  res.end("Authentication required");
+  return false;
+}
+
 function securityHeaders() {
   return {
     "X-Content-Type-Options": "nosniff",
@@ -550,6 +573,7 @@ function serveStatic(req, res, url) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   try {
+    if (!checkBasicAuth(req, res)) return;
     if (url.pathname.startsWith("/auth/")) return await auth.handleAuth(req, res, url);
     if (url.pathname.startsWith("/api/")) return await handleApi(req, res, url);
     // In OAuth mode, gate the app shell behind login (dev mode is never gated).
