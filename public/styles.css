@@ -246,6 +246,8 @@ textarea { min-height: 62px; resize: vertical; }
 .pcell { background: var(--surface); padding: 9px 12px; }
 .pcell span { display: block; font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
 .pcell b { display: block; margin-top: 4px; font-size: 13px; font-weight: 700; font-family: var(--mono); }
+.ro-banner { margin: 0; padding: 10px 16px; background: var(--warn-soft); color: var(--warn); font-size: 12px; font-weight: 600; border-bottom: 1px solid var(--line-soft); }
+.section-body :disabled { opacity: .55; cursor: not-allowed; }
 
 /* ── timeline ── */
 .timeline { display: grid; gap: 8px; max-height: 320px; overflow: auto; }

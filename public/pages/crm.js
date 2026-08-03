@@ -59,7 +59,7 @@ OMP.registerPage('crm', {
       return `<button class="shipment-item ${s.shipmentId === state.selectedId ? 'active' : ''}" data-id="${esc(s.shipmentId)}">
         <div class="shipment-top"><span class="shipment-id">${esc(s.shipmentId)}</span>${H.stagePill(s)}</div>
         <div class="shipment-title">${esc(s.buyer || '-')}</div>
-        <div class="tiny-row">${H.paymentPill(s)} ${H.docChip(s)} ${H.reasonChip(s)} ${H.proofChip(s)} ${s.followUp ? `<span class="chip ${H.isDue(s) ? 'bad' : 'info'}">FU ${esc(s.followUp.dueDate)}</span>` : ''}</div>
+        <div class="tiny-row">${s.canEdit ? '' : '<span class="chip neutral" title="Read-only — not assigned to you">🔒</span>'}${H.paymentPill(s)} ${H.docChip(s)} ${H.reasonChip(s)} ${H.proofChip(s)} ${s.followUp ? `<span class="chip ${H.isDue(s) ? 'bad' : 'info'}">FU ${esc(s.followUp.dueDate)}</span>` : ''}</div>
         ${H.payMini(s)}
       </button>`;
     }
@@ -75,6 +75,7 @@ OMP.registerPage('crm', {
       const s = state.selected;
       if (!s) { main.innerHTML = '<div class="empty-state"><h2>Select a shipment</h2><p>Pick one from the left to update stage, reason, docs, payment and follow-up.</p></div>'; return; }
       const r = H.actionReason(s);
+      const ro = !s.canEdit;
       const money = k => H.shortMoney(s[k]);
       main.innerHTML = `
         <div class="selected-head">
@@ -89,6 +90,7 @@ OMP.registerPage('crm', {
             ${H.paymentPill(s)}
           </div>
         </div>
+        ${ro ? `<div class="ro-banner">🔒 Read-only — owned by <b>${esc(s.owner || 'another associate')}</b>. Only they can update this shipment.</div>` : ''}
         <div style="padding:14px 16px;border-bottom:1px solid var(--line-soft)">${stepper(s)}</div>
         <div class="detail-grid">
           ${detail('Owner', s.owner || 'Unassigned')}
@@ -133,13 +135,17 @@ OMP.registerPage('crm', {
           </div>
         </div>`;
 
-      // bindings
-      main.querySelector('#saveStage').onclick = () => A.postUpdate({ type: 'stage', value: main.querySelector('#stageUpdate').value, reason: main.querySelector('#stageReason').value, note: main.querySelector('#stageNote').value });
-      main.querySelector('#saveOwner').onclick = () => { const v = main.querySelector('#ownerUpdate').value.trim(); if (v) A.postUpdate({ type: 'owner', value: v, note: 'Owner updated' }); };
-      main.querySelector('#saveNote').onclick = () => { const v = main.querySelector('#genNote').value.trim(); if (v) A.postUpdate({ type: 'note', value: v, note: 'Remark' }); };
-      main.querySelector('#saveFu').onclick = () => A.postUpdate({ type: 'followup', value: 'scheduled', dueDate: main.querySelector('#fuDate').value, note: main.querySelector('#fuNote').value, status: 'open' });
-      main.querySelector('#fuDone').onclick = () => A.postUpdate({ type: 'followup', value: 'done', dueDate: H.today(), note: main.querySelector('#fuNote').value || 'Follow-up completed', status: 'done' });
-      main.querySelectorAll('.doc-select').forEach(x => x.onchange = () => A.postUpdate({ type: 'doc', key: x.dataset.key, value: x.value, note: `${state.docs[x.dataset.key] || x.dataset.key} → ${x.value}` }));
+      // edit bindings — only when the signed-in associate owns this shipment
+      if (!ro) {
+        main.querySelector('#saveStage').onclick = () => A.postUpdate({ type: 'stage', value: main.querySelector('#stageUpdate').value, reason: main.querySelector('#stageReason').value, note: main.querySelector('#stageNote').value });
+        main.querySelector('#saveOwner').onclick = () => { const v = main.querySelector('#ownerUpdate').value.trim(); if (v) A.postUpdate({ type: 'owner', value: v, note: 'Owner updated' }); };
+        main.querySelector('#saveNote').onclick = () => { const v = main.querySelector('#genNote').value.trim(); if (v) A.postUpdate({ type: 'note', value: v, note: 'Remark' }); };
+        main.querySelector('#saveFu').onclick = () => A.postUpdate({ type: 'followup', value: 'scheduled', dueDate: main.querySelector('#fuDate').value, note: main.querySelector('#fuNote').value, status: 'open' });
+        main.querySelector('#fuDone').onclick = () => A.postUpdate({ type: 'followup', value: 'done', dueDate: H.today(), note: main.querySelector('#fuNote').value || 'Follow-up completed', status: 'done' });
+        main.querySelectorAll('.doc-select').forEach(x => x.onchange = () => A.postUpdate({ type: 'doc', key: x.dataset.key, value: x.value, note: `${state.docs[x.dataset.key] || x.dataset.key} → ${x.value}` }));
+      } else {
+        main.querySelectorAll('.section-body button, .section-body input, .section-body select, .section-body textarea').forEach(x => x.disabled = true);
+      }
       // collapsible sections — click header (not a control) to fold
       main.querySelectorAll('.section-title').forEach(t => t.onclick = e => {
         if (e.target.closest('button, select, input, textarea, a')) return;

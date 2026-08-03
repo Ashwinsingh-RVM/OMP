@@ -398,6 +398,14 @@ function scopeShipments(shipments, user) {
   const key = nameKey(user.name);
   return shipments.filter((s) => shipmentNames(s).includes(key));
 }
+
+// Read model: an associate can SEE all shipments; EDIT only the ones assigned to
+// them (their name is a Control/SR/BR POC). Admin edits all; guest edits nothing.
+function canEditShipment(shipment, user) {
+  if (!user || user.role === "guest") return false;
+  if (user.role === "admin") return true;
+  return shipmentNames(shipment).includes(nameKey(user.name));
+}
 // Optional shared-password gate for deployed instances. When APP_PASSWORD is set
 // (e.g. on Railway) every request needs HTTP Basic Auth. In local dev it is unset,
 // so there is no gate and the server is bound to 127.0.0.1 anyway.
@@ -501,7 +509,10 @@ async function handleApi(req, res, url) {
   const state = await loadState();
   const users = buildUsers(state.shipments);
   const user = resolveUser(req, url, state.shipments);
-  const scopedShipments = scopeShipments(state.shipments, user);
+  // Read model: admin + associates can READ every shipment; each is tagged with
+  // canEdit (true only for the ones assigned to them). Guests get nothing.
+  const canSeeAll = user.role === "admin" || user.role === "associate";
+  const readable = (canSeeAll ? state.shipments : []).map((s) => ({ ...s, canEdit: canEditShipment(s, user) }));
   if (req.method === "GET" && url.pathname === "/api/me") {
     return sendJson(res, {
       user,
@@ -515,8 +526,8 @@ async function handleApi(req, res, url) {
   }
   if (req.method === "GET" && url.pathname === "/api/bootstrap") {
     return sendJson(res, {
-      summary: buildSummary(scopedShipments),
-      shipments: scopedShipments,
+      summary: buildSummary(readable),
+      shipments: readable,
       stages: STAGE_ORDER.map((key) => ({ key, label: STAGE_LABELS[key] })),
       docs: DOC_LABELS,
       user,
@@ -525,9 +536,9 @@ async function handleApi(req, res, url) {
   }
   if (req.method === "GET" && url.pathname.startsWith("/api/shipments/")) {
     const shipmentId = decodeURIComponent(url.pathname.split("/").pop());
-    const shipment = scopedShipments.find((s) => s.shipmentId === shipmentId);
+    const shipment = readable.find((s) => s.shipmentId === shipmentId);
     const timeline = (state.updates.updates || []).filter((e) => e.shipmentId === shipmentId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    if (!shipment) return sendJson(res, { error: "Shipment not found or outside user scope" }, 404);
+    if (!shipment) return sendJson(res, { error: "Shipment not found or not visible" }, 404);
     return sendJson(res, { shipment, timeline });
   }
   if (req.method === "POST" && url.pathname === "/api/updates") {
@@ -542,8 +553,9 @@ async function handleApi(req, res, url) {
       const byBody = users.find((u) => u.email === String(payload.actorEmail || "").toLowerCase());
       if (byBody) actingUser = byBody;
     }
-    const actingScope = scopeShipments(state.shipments, actingUser);
-    if (!actingScope.some((s) => s.shipmentId === shipmentId)) return sendJson(res, { error: "Shipment outside your scope" }, 403);
+    const target = state.shipments.find((s) => s.shipmentId === shipmentId);
+    if (!target) return sendJson(res, { error: "Shipment not found" }, 404);
+    if (!canEditShipment(target, actingUser)) return sendJson(res, { error: "You can only update shipments assigned to you" }, 403);
     const checked = validateUpdate(payload);
     if (checked.error) return sendJson(res, { error: checked.error }, 400);
     const event = createEvent({ ...checked.value, shipmentId, actor: actingUser.name, actorEmail: actingUser.email });
