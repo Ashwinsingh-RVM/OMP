@@ -69,10 +69,42 @@ function createPgStore() {
     ssl: isLocal ? false : { rejectUnauthorized: false },
   });
 
+  // Auto-migrate + seed once on first use, so a fresh Railway/Render Postgres
+  // needs no separate `npm run initdb` step. Idempotent (IF NOT EXISTS / COUNT check).
+  let readyPromise = null;
+  function ensureReady() {
+    if (readyPromise) return readyPromise;
+    readyPromise = (async () => {
+      const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
+      await pool.query(schema);
+      const { rows } = await pool.query("SELECT COUNT(*)::int AS n FROM shipments");
+      if (rows[0].n === 0) {
+        const source = readJson(SHIPMENTS_FILE, { shipments: [] });
+        const list = source.shipments || [];
+        for (const row of list) {
+          await pool.query(
+            `INSERT INTO shipments
+               (shipment_id, order_id, vertical, material, seller, sr_poc, buyer,
+                br_poc, control_poc, funnel, stage_raw, dispatch_date, due_date, docs, raw)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+             ON CONFLICT (shipment_id) DO NOTHING`,
+            [row.shipmentId, row.orderId || null, row.vertical || null, row.material || null,
+             row.seller || null, row.srPoc || null, row.buyer || null, row.brPoc || null,
+             row.controlPoc || null, row.funnel || null, row.stageRaw || null,
+             row.dispatchDate || null, row.dueDate || null, JSON.stringify(row.docs || {}), JSON.stringify(row)]
+          );
+        }
+        console.log(`[store] seeded ${list.length} shipments into Postgres`);
+      }
+    })().catch((e) => { readyPromise = null; throw e; });
+    return readyPromise;
+  }
+
   return {
     kind: "postgres",
     pool,
     async getShipments() {
+      await ensureReady();
       // shipments are read-only from the app's perspective — all mutations
       // are appended to `updates`. `raw` JSONB round-trips the seeded row
       // verbatim, keeping loadState()'s transform byte-for-byte identical.
@@ -80,9 +112,10 @@ function createPgStore() {
       return rows.map((r) => r.raw);
     },
     async getUpdates() {
+      await ensureReady();
       const { rows } = await pool.query(
         `SELECT id, shipment_id, type, key, value, note, actor, actor_email,
-                due_date, status, created_at
+                due_date, status, reason, created_at
            FROM updates
           ORDER BY created_at ASC`
       );
@@ -97,16 +130,18 @@ function createPgStore() {
         actorEmail: r.actor_email || "",
         dueDate: r.due_date || "",
         status: r.status || "",
+        reason: r.reason || "",
         // Downstream code calls String(createdAt).localeCompare(...) and
         // createdAt.localeCompare(...) — must be an ISO string, not a Date.
         createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at || ""),
       }));
     },
     async addUpdate(event) {
+      await ensureReady();
       await pool.query(
         `INSERT INTO updates
-           (id, shipment_id, type, key, value, note, actor, actor_email, due_date, status, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+           (id, shipment_id, type, key, value, note, actor, actor_email, due_date, status, reason, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
         [
           event.id,
           event.shipmentId,
@@ -118,6 +153,7 @@ function createPgStore() {
           event.actorEmail || "",
           event.dueDate ? event.dueDate : null,
           event.status || "",
+          event.reason || "",
           event.createdAt,
         ]
       );

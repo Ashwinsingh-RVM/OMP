@@ -37,8 +37,11 @@ CREATE TABLE IF NOT EXISTS updates (
   actor_email  TEXT DEFAULT '',
   due_date     TEXT,
   status       TEXT DEFAULT 'open',
+  reason       TEXT DEFAULT '',
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- For an already-created table (older deploys), add the column if missing.
+ALTER TABLE updates ADD COLUMN IF NOT EXISTS reason TEXT DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS idx_updates_shipment_id ON updates (shipment_id);
 CREATE INDEX IF NOT EXISTS idx_updates_created_at ON updates (created_at);
