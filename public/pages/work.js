@@ -2,7 +2,7 @@
 OMP.registerPage('work', {
   render(el, OMP) {
     const { state, helpers: H, actions: A } = OMP;
-    const rows = state.shipments;
+    const rows = H.myShipments(); // My Work = shipments assigned to me (admin = all)
     const due = H.ranked(rows.filter(H.isDue));
     const blocked = H.ranked(rows.filter(H.needs));
 

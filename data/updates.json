@@ -257,6 +257,48 @@
       "status": "open",
       "reason": "",
       "createdAt": "2026-08-02T16:50:41.290Z"
+    },
+    {
+      "id": "7595a79a-052e-4fe7-8641-2d7a8cec55ee",
+      "shipmentId": "SH06262902",
+      "type": "stage",
+      "key": "",
+      "value": "qc",
+      "note": "",
+      "actor": "Local Admin",
+      "actorEmail": "local@recykal.test",
+      "dueDate": "",
+      "status": "open",
+      "reason": "pod_pending",
+      "createdAt": "2026-08-03T12:00:12.841Z"
+    },
+    {
+      "id": "7a0eb79b-d032-4415-9201-bba81d06b6ee",
+      "shipmentId": "SH06262902",
+      "type": "followup",
+      "key": "",
+      "value": "scheduled",
+      "note": "",
+      "actor": "Local Admin",
+      "actorEmail": "local@recykal.test",
+      "dueDate": "2026-08-03",
+      "status": "open",
+      "reason": "",
+      "createdAt": "2026-08-03T12:00:14.573Z"
+    },
+    {
+      "id": "0e1e6fbf-26cc-499c-8d44-79f3f649ea67",
+      "shipmentId": "SH06262902",
+      "type": "doc",
+      "key": "buyerPO",
+      "value": "ok",
+      "note": "Buyer PO → ok",
+      "actor": "Local Admin",
+      "actorEmail": "local@recykal.test",
+      "dueDate": "",
+      "status": "open",
+      "reason": "",
+      "createdAt": "2026-08-03T12:00:22.075Z"
     }
   ]
 }

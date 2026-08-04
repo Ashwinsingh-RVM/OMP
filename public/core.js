@@ -98,6 +98,10 @@ const OMP = (() => {
     return v;
   }
   const ranked = rows => [...rows].sort((a, b) => score(b) - score(a));
+  // Personal scope: the shipments this user can act on (own). Admin -> all.
+  // Used by the personal views (Overview, My Work); browse/analytics use all.
+  const myShipments = () => state.shipments.filter(s => s.canEdit);
+  const isScoped = () => state.user && state.user.role !== 'admin';
   function filtered() {
     const f = state.filters;
     return state.shipments.filter(s => {
@@ -250,7 +254,7 @@ const OMP = (() => {
 
   return {
     state, pages, registerPage,
-    helpers: { esc, title, today, num, money, shortMoney, DOC_GROUPS, DOC_STATES, REASONS, reasonLabel, STAGE_META, CAUSE_LABELS, causeLabel, isDue, needs, score, ranked, filtered, actionReason, payMini, docChip, reasonChip, proofChip, stagePill, paymentPill, eventHtml, stageHelp, funnelFlow, stageCounts, avg },
+    helpers: { esc, title, today, num, money, shortMoney, DOC_GROUPS, DOC_STATES, REASONS, reasonLabel, STAGE_META, CAUSE_LABELS, causeLabel, isDue, needs, score, ranked, filtered, myShipments, isScoped, actionReason, payMini, docChip, reasonChip, proofChip, stagePill, paymentPill, eventHtml, stageHelp, funnelFlow, stageCounts, avg },
     actions: { api, loadBootstrap, selectShipment, postUpdate, toast, setView, openInCrm, renderActive, renderAll },
     boot,
   };

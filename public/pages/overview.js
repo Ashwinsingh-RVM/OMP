@@ -3,7 +3,7 @@
 OMP.registerPage('overview', {
   render(el, OMP) {
     const { state, helpers: H, actions: A } = OMP;
-    const rows = state.shipments;
+    const rows = H.myShipments(); // personal view — your shipments (admin = all)
     const open = rows.filter(s => s.funnel !== 'completed' && s.funnel !== 'rejected');
     const completed = rows.filter(s => s.funnel === 'completed');
     const due = rows.filter(H.isDue);
