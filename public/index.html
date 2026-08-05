@@ -50,8 +50,6 @@
   <script src="/pages/pipeline.js"></script>
   <script src="/pages/insights.js"></script>
   <script src="/pages/trends.js"></script>
-  <script>
-    OMP.boot().catch(e => { const pre = document.createElement('pre'); pre.className = 'err'; pre.textContent = String((e && e.message) || e); document.body.innerHTML = ''; document.body.appendChild(pre); });
-  </script>
+  <script src="/boot.js"></script>
 </body>
 </html>

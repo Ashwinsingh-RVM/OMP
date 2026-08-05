@@ -12,7 +12,68 @@ const SHIPMENTS_FILE = path.join(DATA, "shipments.json");
 const UPDATES_FILE = path.join(DATA, "updates.json");
 const PORT = Number(process.env.PORT || 4332);
 
+// Defined up here (above handleApi) so request-time code can reference it safely
+// for identity/host decisions. HOST (below, by listen) reuses the same value.
+const IS_DEPLOYED = Boolean(process.env.HOST || auth.isEnabled() || process.env.DATABASE_URL || process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === "production");
+
 const store = getStore();
+
+// --- In-memory rate limiting (per client IP) --------------------------------
+// Global sliding window: max RATE_MAX requests per RATE_WINDOW_MS. Plus a much
+// stricter counter for FAILED Basic-Auth attempts so the shared password can't
+// be brute-forced. Both maps are bounded so they can't leak memory themselves.
+const RATE_WINDOW_MS = 10_000;
+const RATE_MAX = 100;
+const AUTHFAIL_WINDOW_MS = 60_000;
+const AUTHFAIL_MAX = 10;
+const RATE_MAP_MAX_KEYS = 20_000;
+const rateMap = new Map();      // ip -> number[] (request timestamps)
+const authFailMap = new Map();  // ip -> number[] (failed-auth timestamps)
+
+function clientIp(req) {
+  // Honor the first hop of x-forwarded-for (Railway's proxy), else the socket.
+  const xff = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  return xff || (req.socket && req.socket.remoteAddress) || "unknown";
+}
+
+function slidingHit(map, ip, windowMs, max) {
+  const now = Date.now();
+  if (!map.has(ip) && map.size >= RATE_MAP_MAX_KEYS) {
+    // Evict entries with no recent activity; if still full, drop the oldest key.
+    for (const [k, v] of map) {
+      if (!v.length || v[v.length - 1] <= now - windowMs) map.delete(k);
+    }
+    if (map.size >= RATE_MAP_MAX_KEYS) {
+      const first = map.keys().next().value;
+      if (first !== undefined) map.delete(first);
+    }
+  }
+  let arr = map.get(ip);
+  if (!arr) { arr = []; map.set(ip, arr); }
+  while (arr.length && arr[0] <= now - windowMs) arr.shift();
+  if (arr.length >= max) return true;   // blocked (do not record another hit)
+  arr.push(now);
+  return false;
+}
+
+function rateLimited(ip) { return slidingHit(rateMap, ip, RATE_WINDOW_MS, RATE_MAX); }
+function authFailBlocked(ip) {
+  const now = Date.now();
+  const arr = authFailMap.get(ip);
+  if (!arr) return false;
+  while (arr.length && arr[0] <= now - AUTHFAIL_WINDOW_MS) arr.shift();
+  return arr.length >= AUTHFAIL_MAX;
+}
+function recordAuthFail(ip) { slidingHit(authFailMap, ip, AUTHFAIL_WINDOW_MS, AUTHFAIL_MAX + 1); }
+
+function tooManyRequests(res, retryAfterSec) {
+  res.writeHead(429, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Retry-After": String(retryAfterSec),
+    ...securityHeaders(),
+  });
+  res.end(JSON.stringify({ error: "Too many requests" }));
+}
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -131,7 +192,24 @@ function paymentDerived(row) {
   return "unknown";
 }
 
+// Short in-memory cache so loadState() doesn't recompute every shipment on every
+// /api/* hit (DoS amplification). Invalidated immediately after any write so a
+// writer always observes its own change on the next read.
+let _stateCache = null;
+let _stateCacheAt = 0;
+const STATE_TTL_MS = 2000;
+function invalidateState() { _stateCache = null; _stateCacheAt = 0; }
+
 async function loadState() {
+  const now = Date.now();
+  if (_stateCache && now - _stateCacheAt < STATE_TTL_MS) return _stateCache;
+  const result = await computeState();
+  _stateCache = result;
+  _stateCacheAt = Date.now();
+  return result;
+}
+
+async function computeState() {
   const source = { shipments: await store.getShipments() };
   const updates = { updates: await store.getUpdates() };
   const updateMap = new Map();
@@ -434,7 +512,7 @@ function securityHeaders() {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "no-referrer",
-    "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+    "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
   };
 }
 
@@ -543,13 +621,20 @@ async function handleApi(req, res, url) {
   }
   if (req.method === "POST" && url.pathname === "/api/updates") {
     if (user.role === "guest") return sendJson(res, { error: "Not authorized" }, 403);
-    const payload = await readBody(req);
+    let payload;
+    try {
+      payload = await readBody(req);
+    } catch (e) {
+      return sendJson(res, { error: "Invalid request" }, 400);
+    }
     const shipmentId = String(payload.shipmentId || "").trim();
     if (!shipmentId) return sendJson(res, { error: "shipmentId required" }, 400);
-    // Attribute the write server-side: in dev to the picked (known) associate,
-    // in OAuth to the signed-in user. Client-supplied actor is never trusted for identity.
+    // Attribute the write server-side. Only trust the client-supplied actor to
+    // pick the acting user in LOCAL dev (no OAuth, not deployed) — a pure
+    // laptop convenience. When deployed or OAuth is on, ignore the body actor
+    // and attribute the write to the server-resolved user.
     let actingUser = user;
-    if (!auth.isEnabled()) {
+    if (!auth.isEnabled() && !IS_DEPLOYED) {
       const byBody = users.find((u) => u.email === String(payload.actorEmail || "").toLowerCase());
       if (byBody) actingUser = byBody;
     }
@@ -560,6 +645,7 @@ async function handleApi(req, res, url) {
     if (checked.error) return sendJson(res, { error: checked.error }, 400);
     const event = createEvent({ ...checked.value, shipmentId, actor: actingUser.name, actorEmail: actingUser.email });
     await store.addUpdate(event);
+    invalidateState(); // writer must observe its own change on the next read
     return sendJson(res, { ok: true, event });
   }
   return sendJson(res, { error: "Not found" }, 404);
@@ -584,8 +670,22 @@ function serveStatic(req, res, url) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
+  const ip = clientIp(req);
   try {
-    if (!checkBasicAuth(req, res)) return;
+    // Stricter brute-force gate on the shared Basic-Auth password: block early if
+    // this IP has already piled up too many failed auths in the window.
+    if (process.env.APP_PASSWORD && authFailBlocked(ip)) {
+      return tooManyRequests(res, Math.ceil(AUTHFAIL_WINDOW_MS / 1000));
+    }
+    if (!checkBasicAuth(req, res)) {
+      if (process.env.APP_PASSWORD) recordAuthFail(ip);
+      return;
+    }
+    // Global per-IP sliding-window limiter (applied after auth) so an
+    // authenticated (or dev) client can't flood the server.
+    if (rateLimited(ip)) {
+      return tooManyRequests(res, Math.ceil(RATE_WINDOW_MS / 1000));
+    }
     if (url.pathname.startsWith("/auth/")) return await auth.handleAuth(req, res, url);
     if (url.pathname.startsWith("/api/")) return await handleApi(req, res, url);
     // In OAuth mode, gate the app shell behind login (dev mode is never gated).
@@ -595,14 +695,15 @@ const server = http.createServer(async (req, res) => {
     }
     return serveStatic(req, res, url);
   } catch (error) {
+    // Log the real error server-side; never leak DB/column/parser internals.
     console.error(error);
-    return sendJson(res, { error: error.message || "Server error" }, 500);
+    if (!res.headersSent) return sendJson(res, { error: "Server error" }, 500);
   }
 });
 
 // Bind to loopback for local dev so the app is laptop-only. Bind all interfaces
 // only when actually deployed (Railway/prod, OAuth on, a DATABASE_URL, or HOST set).
-const IS_DEPLOYED = Boolean(process.env.HOST || auth.isEnabled() || process.env.DATABASE_URL || process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === "production");
+// IS_DEPLOYED is defined near the top of the file.
 const HOST = process.env.HOST || (IS_DEPLOYED ? "0.0.0.0" : "127.0.0.1");
 server.listen(PORT, HOST, () => {
   const shown = HOST === "0.0.0.0" ? "0.0.0.0 (all interfaces)" : HOST;

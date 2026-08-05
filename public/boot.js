@@ -1,0 +1,1 @@
+OMP.boot().catch(e => { const pre = document.createElement('pre'); pre.className = 'err'; pre.textContent = String((e && e.message) || e); document.body.innerHTML = ''; document.body.appendChild(pre); });
