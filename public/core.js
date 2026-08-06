@@ -113,6 +113,7 @@ const OMP = (() => {
       if (f.risk === 'overdue' && s.paymentRisk !== 'overdue') return false;
       if (f.risk === 'proof' && !s.paidProofPending) return false;
       if (f.risk === 'unassigned' && s.controlPoc) return false;
+      if (f.risk === 'mine' && !s.canEdit) return false;
       if (f.cause && s.cause !== f.cause) return false;
       return true;
     });
@@ -224,7 +225,7 @@ const OMP = (() => {
     const el = document.getElementById('view-' + state.view);
     if (p && el) { try { p.render(el, OMP); } catch (e) { el.innerHTML = `<pre class="err">${esc(e.message)}\n${esc(e.stack || '')}</pre>`; } }
     // header reflects current scope
-    const un = document.getElementById('userName'); if (un) un.textContent = state.user.role === 'admin' ? 'All shipments' : state.user.name;
+    const un = document.getElementById('userName'); if (un) un.textContent = state.user.role === 'admin' ? 'All shipments' : `${state.user.name} · ${myShipments().length} yours`;
   }
   function renderAll() { renderActive(); }
 
@@ -239,7 +240,7 @@ const OMP = (() => {
       sel.onchange = async e => {
         state.selectedId = null; state.selected = null; state.pipelineStage = '';
         await loadBootstrap(e.target.value);
-        const first = ranked(filtered())[0] || state.shipments[0];
+        const first = ranked(myShipments())[0] || ranked(filtered())[0] || state.shipments[0];
         if (first) await selectShipment(first.shipmentId, false);
         // refresh picker selection labels
         sel.value = state.user.email;

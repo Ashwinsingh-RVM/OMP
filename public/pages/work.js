@@ -56,6 +56,6 @@ OMP.registerPage('work', {
     el.querySelector('#wkStats').innerHTML = `
       <div class="assoc-grid">${metrics.map(([k, v]) => `<div class="assoc-metric"><span>${k}</span><b>${v}</b></div>`).join('')}</div>
       <div class="dwell-list">${stageRows.map(s => `<div class="dwell-row"><span>${s.label}</span><b>${s.count} shipments</b><em>${s.age}d avg dwell</em></div>`).join('') || '<p class="sub">No active stage data.</p>'}</div>
-      <p class="sub dwell-note">Dwell is approximated from dispatch age — historical stage timestamps aren’t in the source yet. It becomes exact once stages are updated in CRM.</p>`;
+      <p class="sub dwell-note">Dwell = estimated from dispatch age (exact stage timestamps aren’t in the source yet). It sharpens as stages get updated in CRM.</p>`;
   }
 });

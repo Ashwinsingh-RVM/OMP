@@ -25,6 +25,7 @@ OMP.registerPage('crm', {
               <select id="crmStage"></select>
               <select id="crmRisk">
                 <option value="">All shipments</option>
+                <option value="mine">My shipments</option>
                 <option value="needs">Needs action</option>
                 <option value="docs">Docs pending</option>
                 <option value="proof">Paid · proof pending</option>
