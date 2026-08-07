@@ -22,6 +22,8 @@
       <!-- Shown by core.js only for admins in OAuth mode; the page itself is
            gated server-side too, so hiding it is convenience, not security. -->
       <a class="admin-link" id="adminPinsLink" href="/admin-pins.html" hidden>Manage PINs</a>
+      <!-- Only meaningful in OAuth mode; dev mode has no session to end. -->
+      <a class="admin-link" id="logoutLink" href="/auth/logout" hidden>Sign out</a>
     </div>
   </header>
 

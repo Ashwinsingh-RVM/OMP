@@ -251,9 +251,18 @@ const OMP = (() => {
     // The page is gated server-side as well; this just keeps it out of sight.
     try {
       const me = await (await fetch('/api/me')).json();
+      const oauth = me.authMode === 'google';
       const link = document.getElementById('adminPinsLink');
-      if (link && me.authMode === 'google' && me.user && me.user.role === 'admin') link.hidden = false;
-    } catch (e) { /* header link is optional — never block boot on it */ }
+      if (link && oauth && me.user && me.user.role === 'admin') link.hidden = false;
+      // Signing out matters most on a shared machine — without this the only
+      // logout in the whole app was the one on the PIN screen.
+      const out = document.getElementById('logoutLink');
+      if (out && oauth) out.hidden = false;
+      // The user picker is a dev-only convenience; in OAuth mode identity comes
+      // from the session and the dropdown would be misleading.
+      const picker = document.querySelector('.login-label');
+      if (picker && oauth) picker.hidden = true;
+    } catch (e) { /* header links are optional — never block boot on it */ }
     document.querySelectorAll('.view-tab').forEach(b => b.onclick = () => setView(b.dataset.view));
     const first = ranked(filtered())[0] || state.shipments[0];
     if (first) await selectShipment(first.shipmentId, false);

@@ -61,6 +61,14 @@ p { color: var(--muted); }
   font-size: 11px; font-weight: 700; color: var(--brand-deep); background: var(--gold);
   padding: 5px 10px; border-radius: 999px; white-space: nowrap;
 }
+/* Header actions shown only in OAuth mode (Manage PINs, Sign out). */
+.admin-link {
+  font-size: 11px; font-weight: 600; color: #bfd8ce; text-decoration: none;
+  border: 1px solid rgba(255,255,255,.22); border-radius: 999px;
+  padding: 5px 11px; white-space: nowrap;
+}
+.admin-link:hover { color: #fff; border-color: rgba(255,255,255,.45); }
+.admin-link[hidden] { display: none; }
 
 /* ── tabs ── */
 .top-tabs {

@@ -519,10 +519,45 @@ function isAuthorizedIdentity(identity) {
 }
 
 /* ------------------------------- PIN factor ------------------------------- */
-// Has this signed-in identity cleared the PIN gate on this session? PIN is asked
-// once per session and rides the session's existing 7-day TTL, not every load.
-function pinSatisfied(identity) {
-  return Boolean(identity && identity.pinAt);
+// Sessions live 7 days, so "did this session pass the PIN gate" cannot be a
+// simple boolean: an admin who clears or resets somebody's PIN expects that
+// person to be out NOW — that is the whole point of admin-controlled PINs, and
+// it is the only instant off-switch for offboarding (removing them from
+// AUTH_USERS otherwise needs a redeploy). So the session's pinAt is compared
+// against when the PIN was last written: an older session no longer counts.
+//
+// A short cache keeps this off the database on every single API call. Writes
+// invalidate it immediately, so a reset takes effect on the next request.
+const PIN_META_TTL_MS = 5_000;
+const pinMetaCache = new Map(); // email -> { updatedAt: number|null, at: number }
+
+function invalidatePinMeta(email) {
+  pinMetaCache.delete(String(email || "").toLowerCase());
+}
+
+async function pinUpdatedAt(email) {
+  const key = String(email || "").toLowerCase();
+  const hit = pinMetaCache.get(key);
+  if (hit && Date.now() - hit.at < PIN_META_TTL_MS) return hit.updatedAt;
+  const record = await store.getPin(key);
+  const updatedAt = record && record.updatedAt ? Date.parse(record.updatedAt) : null;
+  if (pinMetaCache.size > 1000) pinMetaCache.clear();
+  pinMetaCache.set(key, { updatedAt: Number.isFinite(updatedAt) ? updatedAt : null, at: Date.now() });
+  return pinMetaCache.get(key).updatedAt;
+}
+
+// Has this session cleared the PIN gate, and is that still valid?
+async function pinSatisfied(identity) {
+  if (!identity || !identity.pinAt) return false;
+  const email = String(identity.email).toLowerCase();
+  const updatedAt = await pinUpdatedAt(email);
+  if (updatedAt === null) {
+    // No PIN on record. Either an admin just cleared it — in which case this
+    // session must die — or this is the bootstrap admin who never had a row.
+    return Boolean(process.env.BOOTSTRAP_ADMIN_PIN) && adminEmails().includes(email);
+  }
+  // Issued or re-issued after this session passed the gate → ask again.
+  return identity.pinAt >= updatedAt;
 }
 
 // Look up the stored PIN hash, falling back to BOOTSTRAP_ADMIN_PIN for an admin
@@ -721,7 +756,7 @@ async function handleApi(req, res, url) {
   // stop. /api/me stays open so the frontend can tell WHY it is being blocked.
   if (auth.isEnabled()) {
     const identity = auth.getIdentity(req);
-    const gated = identity && isAuthorizedIdentity(identity) && !pinSatisfied(identity);
+    const gated = identity && isAuthorizedIdentity(identity) && !(await pinSatisfied(identity));
     if (gated && url.pathname !== "/api/me") {
       return sendJson(res, { error: "PIN required", pinRequired: true }, 403);
     }
@@ -739,7 +774,7 @@ async function handleApi(req, res, url) {
       user,
       authMode: auth.isEnabled() ? "google" : "dev",
       authenticated: auth.isEnabled() ? Boolean(identity) : true,
-      pinRequired: Boolean(identity && isAuthorizedIdentity(identity) && !pinSatisfied(identity)),
+      pinRequired: Boolean(identity && isAuthorizedIdentity(identity) && !(await pinSatisfied(identity))),
     });
   }
   if (req.method === "GET" && url.pathname === "/api/users") {
@@ -779,6 +814,8 @@ async function handleApi(req, res, url) {
       if (payload.clear === true) {
         await store.clearPin(target);
         pin.clearFailures(target);
+        // Their live session stops working on its next request, not in 7 days.
+        invalidatePinMeta(target);
         return sendJson(res, { ok: true, cleared: true });
       }
       const value = String(payload.pin || "");
@@ -786,8 +823,11 @@ async function handleApi(req, res, url) {
         return sendJson(res, { error: `PIN must be ${pin.PIN_MIN}-${pin.PIN_MAX} digits` }, 400);
       }
       const record = await pin.hashPin(value);
-      await store.setPin(target, { ...record, setBy: user.email });
+      // updatedAt is the app clock so it is comparable with session pinAt; any
+      // session that passed the gate before this moment must re-enter the PIN.
+      await store.setPin(target, { ...record, setBy: user.email, updatedAt: new Date().toISOString() });
       pin.clearFailures(target); // a fresh PIN clears any standing lockout
+      invalidatePinMeta(target);
       return sendJson(res, { ok: true });
     }
     return sendJson(res, { error: "Method not allowed" }, 405);
@@ -894,8 +934,9 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(302, { Location: "/login.html?error=denied" });
         return res.end();
       }
-      // Signed in and on the roster, but the PIN is still outstanding.
-      if (!pinSatisfied(identity)) {
+      // Signed in and on the roster, but the PIN is still outstanding — either
+      // never entered on this session, or invalidated by an admin reset.
+      if (!(await pinSatisfied(identity))) {
         res.writeHead(302, { Location: "/pin.html" });
         return res.end();
       }

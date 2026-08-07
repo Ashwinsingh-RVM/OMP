@@ -66,6 +66,9 @@ function createJsonStore() {
       current.pins[String(email).toLowerCase()] = record;
       writeJson(PINS_FILE, current);
     },
+    // updatedAt is supplied by the caller (app clock) rather than stamped here,
+    // so it is comparable with the pinAt written into session cookies. See the
+    // matching note on the Postgres setPin.
     async clearPin(email) {
       const current = readJson(PINS_FILE, { pins: {} });
       current.pins = current.pins || {};
@@ -194,15 +197,20 @@ function createPgStore() {
         updatedAt: r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at || ""),
       };
     },
+    // updated_at comes from the caller (the app clock), NOT the database's now().
+    // It is compared against the pinAt stamped into session cookies, and on a
+    // managed Postgres the DB runs on a different host — even small clock skew
+    // there would either log people out for no reason or let a cleared PIN keep
+    // working. One clock, one meaning.
     async setPin(email, record) {
       await ensureReady();
       await pool.query(
         `INSERT INTO pins (email, salt, hash, set_by, updated_at)
-         VALUES ($1,$2,$3,$4, now())
+         VALUES ($1,$2,$3,$4,$5)
          ON CONFLICT (email) DO UPDATE
            SET salt = EXCLUDED.salt, hash = EXCLUDED.hash,
-               set_by = EXCLUDED.set_by, updated_at = now()`,
-        [String(email).toLowerCase(), record.salt, record.hash, record.setBy || ""]
+               set_by = EXCLUDED.set_by, updated_at = EXCLUDED.updated_at`,
+        [String(email).toLowerCase(), record.salt, record.hash, record.setBy || "", record.updatedAt]
       );
     },
     async clearPin(email) {
