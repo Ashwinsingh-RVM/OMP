@@ -259,10 +259,20 @@ const OMP = (() => {
       // logout in the whole app was the one on the PIN screen.
       const out = document.getElementById('logoutLink');
       if (out && oauth) out.hidden = false;
-      // The user picker is a dev-only convenience; in OAuth mode identity comes
-      // from the session and the dropdown would be misleading.
-      const picker = document.querySelector('.login-label');
-      if (picker && oauth) picker.hidden = true;
+      // The user picker is a dev-only convenience. With real auth on, identity
+      // comes from the session, so the dropdown is not just useless but wrong —
+      // it lists every associate and switching does nothing. Replace it with who
+      // you actually are. (Setting .hidden alone would not work: .login-label
+      // carries display:flex, which beats the hidden attribute.)
+      const picker = document.getElementById('userPicker');
+      const who = document.getElementById('whoAmI');
+      if (oauth) {
+        if (picker) picker.hidden = true;
+        if (who && me.user) {
+          who.textContent = 'Signed in as ' + (me.user.email || me.user.name);
+          who.hidden = false;
+        }
+      }
     } catch (e) { /* header links are optional — never block boot on it */ }
     document.querySelectorAll('.view-tab').forEach(b => b.onclick = () => setView(b.dataset.view));
     const first = ranked(filtered())[0] || state.shipments[0];

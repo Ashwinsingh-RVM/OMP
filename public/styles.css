@@ -61,6 +61,13 @@ p { color: var(--muted); }
   font-size: 11px; font-weight: 700; color: var(--brand-deep); background: var(--gold);
   padding: 5px 10px; border-radius: 999px; white-space: nowrap;
 }
+/* .login-label sets display:flex, which overrides the hidden attribute's
+   UA display:none — so hiding the dev picker needs an explicit rule. */
+.login-label[hidden] { display: none !important; }
+.who-am-i {
+  font-size: 11px; font-weight: 600; color: #bfd8ce; white-space: nowrap;
+}
+.who-am-i[hidden] { display: none; }
 /* Header actions shown only in OAuth mode (Manage PINs, Sign out). */
 .admin-link {
   font-size: 11px; font-weight: 600; color: #bfd8ce; text-decoration: none;

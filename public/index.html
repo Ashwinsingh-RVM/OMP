@@ -17,7 +17,9 @@
     </div>
     <div></div>
     <div class="header-meta">
-      <label class="login-label">Signed in as <select id="userSelect"></select></label>
+      <!-- Dev-only identity picker; replaced by #whoAmI once real auth is on. -->
+      <label class="login-label" id="userPicker">Signed in as <select id="userSelect"></select></label>
+      <span class="who-am-i" id="whoAmI" hidden></span>
       <span id="userName">Local Admin</span>
       <!-- Shown by core.js only for admins in OAuth mode; the page itself is
            gated server-side too, so hiding it is convenience, not security. -->
