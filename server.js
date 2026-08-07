@@ -1,4 +1,4 @@
-﻿const http = require("http");
+const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -13,8 +13,6 @@ const SHIPMENTS_FILE = path.join(DATA, "shipments.json");
 const UPDATES_FILE = path.join(DATA, "updates.json");
 const PORT = Number(process.env.PORT || 4332);
 
-// Defined up here (above handleApi) so request-time code can reference it safely
-// for identity/host decisions. HOST (below, by listen) reuses the same value.
 // Sign-in is work email + PIN. Authentication is on whenever SESSION_SECRET is
 // set; without it the app runs in local dev mode, where ?user= picks any
 // identity and the default is admin with no cookie at all. That is safe on a
@@ -24,6 +22,8 @@ function authGateOn() {
   return auth.isEnabled();
 }
 
+// Defined up here (above handleApi) so request-time code can reference it safely
+// for identity/host decisions. HOST (below, by listen) reuses the same value.
 const IS_DEPLOYED = Boolean(process.env.HOST || authGateOn() || process.env.DATABASE_URL || process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === "production");
 
 const store = getStore();

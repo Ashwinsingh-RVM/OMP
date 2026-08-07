@@ -358,9 +358,21 @@ textarea { min-height: 62px; resize: vertical; }
 }
 @media (max-width: 720px) {
   .app-header { grid-template-columns: auto 1fr; }
-  .header-meta { grid-column: 1 / -1; justify-content: space-between; }
-  .login-label select { width: 190px; }
-  .top-tabs { top: 60px; }
+  /* The header meta wraps onto its own row on a phone, and its height depends
+     on how many items are in it (identity, scope, Manage PINs, Sign out). A
+     fixed sticky offset for .top-tabs cannot track that, so stop pinning the
+     header on small screens and pin only the tabs. */
+  .app-header { position: static; }
+  .header-meta {
+    grid-column: 1 / -1; justify-content: flex-start;
+    flex-wrap: wrap; gap: 8px; row-gap: 8px;
+  }
+  .who-am-i {
+    /* A long address must not push the buttons off-screen. */
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .login-label select { width: 190px; max-width: 100%; }
+  .top-tabs { top: 0; }
   .page { padding: 14px; }
   .kpi-strip { grid-template-columns: 1fr 1fr; }
   .kpi:nth-child(2n) { border-right: 0; }

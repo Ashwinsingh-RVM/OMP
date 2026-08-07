@@ -36,7 +36,9 @@
     form { display: grid; gap: 10px; text-align: left; }
     label { font-size: 12px; color: #6b7280; font-weight: 600; }
     input {
-      width: 100%; padding: 11px 14px; font-size: 15px; border-radius: 10px;
+      /* 16px, not 15: iOS Safari zooms the page in on focus for anything
+         smaller, which throws the layout off on a phone. */
+      width: 100%; padding: 12px 14px; font-size: 16px; border-radius: 10px;
       border: 1px solid #d4d9df; background: #fff; color: #1c2430;
     }
     input::placeholder { color: #aab3bd; }

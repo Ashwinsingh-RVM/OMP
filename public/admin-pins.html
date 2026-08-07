@@ -28,6 +28,31 @@
     .msg.bad { color: #a52a1f; }
     .note { margin-top: 26px; font-size: 12.5px; color: #6b7280; line-height: 1.6; }
     .back { display: inline-block; margin-bottom: 18px; font-size: 13px; color: #0a5540; text-decoration: none; }
+
+    /* On a phone a four-column table either overflows sideways or squeezes the
+       PIN field to nothing. Drop the table shape entirely and stack each person
+       into a card, with the column headers repeated as inline labels. */
+    @media (max-width: 640px) {
+      .pin-wrap { margin: 20px auto; padding: 0 14px; }
+      .pin-table, .pin-table tbody, .pin-table tr, .pin-table td { display: block; width: 100%; }
+      .pin-table thead { display: none; }
+      .pin-table { border: none; background: transparent; }
+      .pin-table tr {
+        background: #fff; border: 1px solid #e3e6ea; border-radius: 10px;
+        padding: 12px 14px; margin-bottom: 12px;
+      }
+      .pin-table td { border: none; padding: 4px 0; }
+      .pin-table td::before {
+        content: attr(data-label); display: block;
+        font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+        color: #9aa4b2; margin-bottom: 3px;
+      }
+      .pin-table td:last-child { display: flex; gap: 8px; margin-top: 8px; }
+      .pin-table td:last-child::before { display: none; }
+      /* 16px keeps iOS from zooming in when the field takes focus. */
+      .pin-table input { flex: 1; width: auto; min-width: 0; font-size: 16px; padding: 10px 12px; }
+      .pin-table button { padding: 10px 14px; }
+    }
   </style>
 </head>
 <body>

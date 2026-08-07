@@ -27,10 +27,12 @@
         if (!data.roster) { say(data.error || "Could not load the roster", false); return; }
         rows.innerHTML = data.roster.map(function (p) {
           return (
+            // data-label feeds the stacked card layout on phones, where the
+            // table header is hidden and each cell prints its own label.
             "<tr data-email=\"" + esc(p.email) + "\">" +
-            "<td>" + esc(p.email) + (p.internal ? "<br><span style=\"color:#9aa4b2;font-size:12px\">" + esc(p.internal) + "</span>" : "") + "</td>" +
-            "<td><span class=\"tag " + (p.role === "admin" ? "admin" : "") + "\">" + esc(p.role) + "</span></td>" +
-            "<td><span class=\"tag " + (p.hasPin ? "set" : "unset") + "\">" + (p.hasPin ? "PIN set" : "No PIN") + "</span></td>" +
+            "<td data-label=\"Account\">" + esc(p.email) + (p.internal ? "<br><span style=\"color:#9aa4b2;font-size:12px\">" + esc(p.internal) + "</span>" : "") + "</td>" +
+            "<td data-label=\"Role\"><span class=\"tag " + (p.role === "admin" ? "admin" : "") + "\">" + esc(p.role) + "</span></td>" +
+            "<td data-label=\"PIN status\"><span class=\"tag " + (p.hasPin ? "set" : "unset") + "\">" + (p.hasPin ? "PIN set" : "No PIN") + "</span></td>" +
             "<td>" +
             "<input type=\"text\" inputmode=\"numeric\" maxlength=\"12\" placeholder=\"6-12 digits\" />" +
             " <button data-act=\"set\">Save</button>" +
