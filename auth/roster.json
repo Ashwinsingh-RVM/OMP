@@ -4,14 +4,23 @@
     "server — it documents what the Railway env vars should contain. Update it",
     "whenever ADMIN_EMAILS / AUTH_USERS change so the roster is reviewable in git.",
     "",
-    "ADMIN_EMAILS  = comma-separated real Google emails -> role admin, scope all.",
-    "                Admins keep their own name/email in the audit trail.",
-    "AUTH_USERS    = JSON map: real Google email -> internal associate email.",
-    "                Keys are lowercased by the server, values must match the",
-    "                emails returned by GET /api/bootstrap (users[].email).",
+    "Sign-in is work email + PIN. There is no Google SSO.",
     "",
-    "Anyone signing in with a Google account absent from BOTH lists is turned",
-    "away at /login.html?error=denied and never reaches the dashboard."
+    "SESSION_SECRET      = required. Long random string; signs session cookies.",
+    "                      The server REFUSES to boot a deployed instance without",
+    "                      it, because auth would silently be off.",
+    "ADMIN_EMAILS        = comma-separated emails -> role admin, scope all.",
+    "                      Admins keep their own email in the audit trail.",
+    "AUTH_USERS          = JSON map: work email -> internal associate email.",
+    "                      Keys are lowercased by the server, values must match",
+    "                      the emails from GET /api/bootstrap (users[].email).",
+    "BOOTSTRAP_ADMIN_PIN = temporary. Lets an ADMIN_EMAILS account with no PIN",
+    "                      row sign in and issue everyone else's. REMOVE IT once",
+    "                      the roster below all shows a PIN — while it is set,",
+    "                      that PIN plus a guessable admin address is full admin.",
+    "",
+    "Anyone signing in with an address absent from BOTH lists is turned away at",
+    "/login.html?error=denied and never reaches the dashboard."
   ],
 
   "ADMIN_EMAILS": [
@@ -43,8 +52,8 @@
   "_OPEN_QUESTION": [
     "invoicing20@recykal.com (Bharath Kumar) and invoicing04@recykal.com",
     "(Megharaj B) look like shared invoicing mailboxes rather than personal",
-    "accounts. Anyone who can sign into those mailboxes can act as that",
-    "associate, and audit rows will name them. Swap for personal @recykal.com",
-    "accounts if they exist."
+    "addresses. Audit rows will name them, so two people acting as one is",
+    "indistinguishable after the fact. Swap for personal @recykal.com addresses",
+    "if they exist."
   ]
 }
