@@ -410,8 +410,56 @@ function splitNames(value) {
     .filter(Boolean);
 }
 
+// The source xlsx spells several POCs more than one way ("Jithu" / "Jithender
+// Chitakodur"). Each spelling used to become a separate user with its own
+// shipment scope, so a person mapped to one spelling could not see or edit the
+// shipments filed under the other. Collapse variants onto one canonical name.
+// Keys are lowercase raw spellings; values are the canonical display name.
+const NAME_ALIASES = {
+  "jithu": "Jithender Chitakodur",
+  "jithender": "Jithender Chitakodur",
+  "jithender chitakodur": "Jithender Chitakodur",
+  "meghraj": "Megharaj B",
+  "megharaj": "Megharaj B",
+  "megharaj b": "Megharaj B",
+  "bharat": "Bharath Kumar",
+  "bharath": "Bharath Kumar",
+  "bharath kumar": "Bharath Kumar",
+  "aishwarya": "Aishwarya Laxmi Karanam",
+  "aishwarya laxmi karanam": "Aishwarya Laxmi Karanam",
+  "aravind": "Aravind Jakkula",
+  "aravind jakkula": "Aravind Jakkula",
+  "divya": "Divya Boppuri",
+  "divya boppuri": "Divya Boppuri",
+  "rajeshwari": "Rajeshwari Sunnapu",
+  "rajeshwari sunnapu": "Rajeshwari Sunnapu",
+  // Not in the login roster, but the same person split across spellings — merged
+  // so admin views and ownership counts are honest.
+  "arijit": "Arijit Dutta",
+  "arjit": "Arijit Dutta",
+  "arijit dutt": "Arijit Dutta",
+  "arijit dutta": "Arijit Dutta",
+  "atharv patil": "Atharva Sudhir Patil",
+  "atharva patil": "Atharva Sudhir Patil",
+  "atharva sudhir patil": "Atharva Sudhir Patil",
+  "ashish": "Ashish Kumar Rai",
+  "ashish kumar rai": "Ashish Kumar Rai",
+  "adarsh": "Adarsh Krishnan",
+  "adarsh krishnan": "Adarsh Krishnan",
+  "arghyadeep": "Arghyadeep Samanta",
+  "arghyadeep samanta": "Arghyadeep Samanta",
+};
+
+function canonicalName(value) {
+  const raw = String(value || "").trim().replace(/\s+/g, " ");
+  return NAME_ALIASES[raw.toLowerCase()] || raw;
+}
+
+// Identity key for a POC name. Aliasing lives here so every consumer —
+// makeEmail (user identity), shipmentNames + scopeShipments + canEditShipment
+// (ownership) — agrees on who a name belongs to.
 function nameKey(value) {
-  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+  return canonicalName(value).toLowerCase();
 }
 
 function makeEmail(name) {
@@ -422,9 +470,12 @@ function buildUsers(shipments) {
   const users = [{ name: "Local Admin", email: "local@recykal.test", role: "admin", scope: "all" }];
   const seen = new Set(users.map((u) => u.email));
   for (const s of shipments) {
-    for (const name of [...splitNames(s.controlPoc), ...splitNames(s.srPoc), ...splitNames(s.brPoc)]) {
+    for (const raw of [...splitNames(s.controlPoc), ...splitNames(s.srPoc), ...splitNames(s.brPoc)]) {
+      if (!raw) continue;
+      // Display the canonical name so a person appears once, under one spelling.
+      const name = canonicalName(raw);
       const email = makeEmail(name);
-      if (!name || seen.has(email)) continue;
+      if (seen.has(email)) continue;
       users.push({ name, email, role: "associate", scope: "own" });
       seen.add(email);
     }
@@ -435,11 +486,35 @@ function buildUsers(shipments) {
 function authUserMap() {
   // Optional mapping of real Google emails to an internal user email/POC scope.
   // e.g. AUTH_USERS='{"ashwin.singh@recykal.com":"aishwarya@local.associate"}'
+  // Keys are normalised to lowercase: Google emails arrive lowercased, but the
+  // configured roster is hand-written and often is not (e.g. Invoicing20@...).
+  // A case mismatch would silently drop that person to a no-scope guest.
   try {
-    return JSON.parse(process.env.AUTH_USERS || "{}");
+    const raw = JSON.parse(process.env.AUTH_USERS || "{}");
+    const out = {};
+    for (const [k, v] of Object.entries(raw)) out[String(k).trim().toLowerCase()] = String(v).trim().toLowerCase();
+    return out;
   } catch (e) {
     return {};
   }
+}
+
+// Real Google emails that get admin (see + edit everything). Comma-separated.
+// Kept separate from AUTH_USERS so each admin keeps their own identity in the
+// audit trail instead of every admin writing as "local@recykal.test".
+function adminEmails() {
+  return String(process.env.ADMIN_EMAILS || "")
+    .split(",")
+    .map((x) => x.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+// Is this signed-in Google account on the roster at all? Used to keep the app
+// shell closed to strangers once the shared APP_PASSWORD gate is removed.
+function isAuthorizedIdentity(identity) {
+  const email = String((identity && identity.email) || "").toLowerCase();
+  if (!email) return false;
+  return adminEmails().includes(email) || Object.prototype.hasOwnProperty.call(authUserMap(), email);
 }
 
 function resolveUser(req, url, shipments) {
@@ -449,6 +524,11 @@ function resolveUser(req, url, shipments) {
     const identity = auth.getIdentity(req);
     if (!identity) return { name: "Guest", email: "guest", role: "guest", scope: "none" };
     const email = String(identity.email || "").toLowerCase();
+    // Admins keep their real identity (name + email) so audit rows name the
+    // actual person, but get admin role/scope.
+    if (adminEmails().includes(email)) {
+      return { name: identity.name || email, email, role: "admin", scope: "all" };
+    }
     const mapped = authUserMap()[email];
     let match = null;
     if (mapped) match = users.find((u) => u.email.toLowerCase() === String(mapped).toLowerCase());
@@ -689,9 +769,19 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname.startsWith("/auth/")) return await auth.handleAuth(req, res, url);
     if (url.pathname.startsWith("/api/")) return await handleApi(req, res, url);
     // In OAuth mode, gate the app shell behind login (dev mode is never gated).
-    if (auth.isEnabled() && (url.pathname === "/" || url.pathname === "/index.html") && !auth.getIdentity(req)) {
-      res.writeHead(302, { Location: "/login.html" });
-      return res.end();
+    // A valid Google account that is not on the roster is turned away here too:
+    // without this, once APP_PASSWORD is gone any Google user on the internet
+    // could sign in and load the (empty) dashboard shell.
+    if (auth.isEnabled() && (url.pathname === "/" || url.pathname === "/index.html")) {
+      const identity = auth.getIdentity(req);
+      if (!identity) {
+        res.writeHead(302, { Location: "/login.html" });
+        return res.end();
+      }
+      if (!isAuthorizedIdentity(identity)) {
+        res.writeHead(302, { Location: "/login.html?error=denied" });
+        return res.end();
+      }
     }
     return serveStatic(req, res, url);
   } catch (error) {

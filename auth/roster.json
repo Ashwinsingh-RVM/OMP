@@ -1,0 +1,50 @@
+{
+  "_README": [
+    "Reference copy of the production login roster. This file is NOT read by the",
+    "server — it documents what the Railway env vars should contain. Update it",
+    "whenever ADMIN_EMAILS / AUTH_USERS change so the roster is reviewable in git.",
+    "",
+    "ADMIN_EMAILS  = comma-separated real Google emails -> role admin, scope all.",
+    "                Admins keep their own name/email in the audit trail.",
+    "AUTH_USERS    = JSON map: real Google email -> internal associate email.",
+    "                Keys are lowercased by the server, values must match the",
+    "                emails returned by GET /api/bootstrap (users[].email).",
+    "",
+    "Anyone signing in with a Google account absent from BOTH lists is turned",
+    "away at /login.html?error=denied and never reaches the dashboard."
+  ],
+
+  "ADMIN_EMAILS": [
+    "ashwin.singh@recykal.com",
+    "srinivasareddy.dundi@recykal.com"
+  ],
+
+  "AUTH_USERS": {
+    "aishwarya.karanam@recykal.com": "aishwarya.laxmi.karanam@local.associate",
+    "aravind.jakkula@recykal.com": "aravind.jakkula@local.associate",
+    "invoicing20@recykal.com": "bharath.kumar@local.associate",
+    "divya.boppuri@recykal.com": "divya.boppuri@local.associate",
+    "jithender.chitakodur@recykal.com": "jithender.chitakodur@local.associate",
+    "invoicing04@recykal.com": "megharaj.b@local.associate",
+    "rajeshwari.sunnapu@recykal.com": "rajeshwari.sunnapu@local.associate"
+  },
+
+  "_OWNERSHIP_AFTER_ALIAS_MERGE": {
+    "_note": "Shipments each associate can EDIT (all 26 users can READ all 130).",
+    "megharaj.b": 17,
+    "jithender.chitakodur": 12,
+    "aishwarya.laxmi.karanam": 10,
+    "aravind.jakkula": 10,
+    "bharath.kumar": 7,
+    "divya.boppuri": 7,
+    "rajeshwari.sunnapu": 7
+  },
+
+  "_OPEN_QUESTION": [
+    "invoicing20@recykal.com (Bharath Kumar) and invoicing04@recykal.com",
+    "(Megharaj B) look like shared invoicing mailboxes rather than personal",
+    "accounts. Anyone who can sign into those mailboxes can act as that",
+    "associate, and audit rows will name them. Swap for personal @recykal.com",
+    "accounts if they exist."
+  ]
+}

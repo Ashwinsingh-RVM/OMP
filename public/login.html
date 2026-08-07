@@ -42,8 +42,12 @@
     <div class="err" id="err"></div>
   </div>
   <script>
-    if (new URLSearchParams(location.search).get("error") === "auth") {
+    var err = new URLSearchParams(location.search).get("error");
+    if (err === "auth") {
       document.getElementById("err").textContent = "Sign-in failed. Please try again.";
+    } else if (err === "denied") {
+      document.getElementById("err").textContent =
+        "This account does not have access to OMP CRM. Contact the admin to be added.";
     }
   </script>
 </body>
