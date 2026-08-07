@@ -108,7 +108,25 @@ function getIdentity(req) {
   const cookies = parseCookies(req);
   const session = verifySession(cookies[SESSION_COOKIE]);
   if (!session || !session.email) return null;
-  return { email: session.email, name: session.name || session.email };
+  // pinAt (set once the PIN is accepted) rides inside the same signed session
+  // rather than a second cookie. A separate PIN cookie could be paired with a
+  // different user's session; carrying the flag in the signed payload binds it
+  // to this identity structurally, with nothing extra to remember to check.
+  return { email: session.email, name: session.name || session.email, pinAt: session.pinAt || 0 };
+}
+
+/**
+ * Re-issue the current session with extra fields merged in (used to stamp
+ * pinAt after a correct PIN). The original `exp` is preserved, so passing the
+ * PIN gate does not silently extend the 7-day session.
+ */
+function updateSession(req, res, extra) {
+  const cookies = parseCookies(req);
+  const session = verifySession(cookies[SESSION_COOKIE]);
+  if (!session) return false;
+  const merged = { ...session, ...extra };
+  setCookie(res, SESSION_COOKIE, signSession(merged), { maxAgeMs: Math.max(0, merged.exp - Date.now()), req });
+  return true;
 }
 
 function callbackUrlFor(req) {
@@ -211,4 +229,4 @@ function decodeIdToken(idToken) {
   }
 }
 
-module.exports = { isEnabled, handleAuth, getIdentity };
+module.exports = { isEnabled, handleAuth, getIdentity, updateSession };

@@ -4,6 +4,7 @@ const path = require("path");
 const crypto = require("crypto");
 const { getStore } = require("./db/store");
 const auth = require("./auth/google");
+const pin = require("./auth/pin");
 
 const ROOT = __dirname;
 const PUBLIC = path.join(ROOT, "public");
@@ -517,6 +518,56 @@ function isAuthorizedIdentity(identity) {
   return adminEmails().includes(email) || Object.prototype.hasOwnProperty.call(authUserMap(), email);
 }
 
+/* ------------------------------- PIN factor ------------------------------- */
+// Has this signed-in identity cleared the PIN gate on this session? PIN is asked
+// once per session and rides the session's existing 7-day TTL, not every load.
+function pinSatisfied(identity) {
+  return Boolean(identity && identity.pinAt);
+}
+
+// Look up the stored PIN hash, falling back to BOOTSTRAP_ADMIN_PIN for an admin
+// who has no PIN row yet. That bootstrap exists solely so the first admin can
+// sign in and issue everyone else's PIN; remove the env var once that is done.
+async function pinRecordFor(email) {
+  const lower = String(email || "").toLowerCase();
+  const stored = await store.getPin(lower);
+  if (stored) return { record: stored, bootstrap: false };
+  const boot = process.env.BOOTSTRAP_ADMIN_PIN;
+  if (boot && adminEmails().includes(lower) && pin.isValidPinFormat(boot)) {
+    return { record: await pin.hashPin(boot), bootstrap: true };
+  }
+  return { record: null, bootstrap: false };
+}
+
+// PIN submission. The Google session is already verified here, so the acting
+// email comes from the cookie and is never taken from the body.
+async function handlePinSubmit(req, res) {
+  const identity = auth.getIdentity(req);
+  if (!identity || !isAuthorizedIdentity(identity)) return sendJson(res, { error: "Not authorized" }, 403);
+  const email = String(identity.email).toLowerCase();
+  if (pin.isLockedOut(email)) {
+    return sendJson(res, { error: "Too many incorrect PINs. Try again later." }, 429);
+  }
+  let payload;
+  try {
+    payload = await readBody(req);
+  } catch (e) {
+    return sendJson(res, { error: "Invalid request" }, 400);
+  }
+  const supplied = String(payload.pin || "");
+  const { record } = await pinRecordFor(email);
+  // Same generic message whether no PIN was ever issued or the PIN is wrong —
+  // never reveal which accounts have a PIN set.
+  const ok = record ? await pin.verifyPin(supplied, record) : false;
+  if (!ok) {
+    pin.recordFailure(email);
+    return sendJson(res, { error: "Incorrect PIN", attemptsLeft: pin.attemptsLeft(email) }, 401);
+  }
+  pin.clearFailures(email);
+  auth.updateSession(req, res, { pinAt: Date.now() });
+  return sendJson(res, { ok: true });
+}
+
 function resolveUser(req, url, shipments) {
   const users = buildUsers(shipments);
   if (auth.isEnabled()) {
@@ -664,6 +715,17 @@ function createEvent(payload) {
 }
 
 async function handleApi(req, res, url) {
+  // The PIN gate has to live here, not only on the HTML shell: a valid Google
+  // session with no PIN could otherwise curl /api/bootstrap and pull all 130
+  // shipments, which is exactly the compromised-account case the PIN exists to
+  // stop. /api/me stays open so the frontend can tell WHY it is being blocked.
+  if (auth.isEnabled()) {
+    const identity = auth.getIdentity(req);
+    const gated = identity && isAuthorizedIdentity(identity) && !pinSatisfied(identity);
+    if (gated && url.pathname !== "/api/me") {
+      return sendJson(res, { error: "PIN required", pinRequired: true }, 403);
+    }
+  }
   const state = await loadState();
   const users = buildUsers(state.shipments);
   const user = resolveUser(req, url, state.shipments);
@@ -672,15 +734,63 @@ async function handleApi(req, res, url) {
   const canSeeAll = user.role === "admin" || user.role === "associate";
   const readable = (canSeeAll ? state.shipments : []).map((s) => ({ ...s, canEdit: canEditShipment(s, user) }));
   if (req.method === "GET" && url.pathname === "/api/me") {
+    const identity = auth.isEnabled() ? auth.getIdentity(req) : null;
     return sendJson(res, {
       user,
       authMode: auth.isEnabled() ? "google" : "dev",
-      authenticated: auth.isEnabled() ? Boolean(auth.getIdentity(req)) : true,
+      authenticated: auth.isEnabled() ? Boolean(identity) : true,
+      pinRequired: Boolean(identity && isAuthorizedIdentity(identity) && !pinSatisfied(identity)),
     });
   }
   if (req.method === "GET" && url.pathname === "/api/users") {
     if (auth.isEnabled() && user.role !== "admin") return sendJson(res, { error: "Forbidden" }, 403);
     return sendJson(res, { users });
+  }
+  // Admin-only PIN administration. Users cannot set or change their own PIN;
+  // issuing and resetting is an admin action, so this is the one place PINs
+  // are created. Reaching here already required clearing the PIN gate above,
+  // so the endpoint that manages PINs is not itself a way around them.
+  if (url.pathname === "/api/admin/pins") {
+    if (!auth.isEnabled()) return sendJson(res, { error: "Not available in dev mode" }, 400);
+    if (user.role !== "admin") return sendJson(res, { error: "Forbidden" }, 403);
+
+    if (req.method === "GET") {
+      // Who has a PIN issued — never any hash or PIN material.
+      const issued = new Set(await store.listPinEmails());
+      const roster = [
+        ...adminEmails().map((email) => ({ email, role: "admin", internal: "" })),
+        ...Object.entries(authUserMap()).map(([email, internal]) => ({ email, role: "associate", internal })),
+      ];
+      return sendJson(res, { roster: roster.map((r) => ({ ...r, hasPin: issued.has(r.email) })) });
+    }
+
+    if (req.method === "POST") {
+      let payload;
+      try {
+        payload = await readBody(req);
+      } catch (e) {
+        return sendJson(res, { error: "Invalid request" }, 400);
+      }
+      const target = String(payload.email || "").trim().toLowerCase();
+      // Only roster members get PINs — no issuing a PIN to an arbitrary address.
+      if (!target || !isAuthorizedIdentity({ email: target })) {
+        return sendJson(res, { error: "Not a roster member" }, 400);
+      }
+      if (payload.clear === true) {
+        await store.clearPin(target);
+        pin.clearFailures(target);
+        return sendJson(res, { ok: true, cleared: true });
+      }
+      const value = String(payload.pin || "");
+      if (!pin.isValidPinFormat(value)) {
+        return sendJson(res, { error: `PIN must be ${pin.PIN_MIN}-${pin.PIN_MAX} digits` }, 400);
+      }
+      const record = await pin.hashPin(value);
+      await store.setPin(target, { ...record, setBy: user.email });
+      pin.clearFailures(target); // a fresh PIN clears any standing lockout
+      return sendJson(res, { ok: true });
+    }
+    return sendJson(res, { error: "Method not allowed" }, 405);
   }
   if (req.method === "GET" && url.pathname === "/api/bootstrap") {
     return sendJson(res, {
@@ -766,6 +876,7 @@ const server = http.createServer(async (req, res) => {
     if (rateLimited(ip)) {
       return tooManyRequests(res, Math.ceil(RATE_WINDOW_MS / 1000));
     }
+    if (req.method === "POST" && url.pathname === "/auth/pin") return await handlePinSubmit(req, res);
     if (url.pathname.startsWith("/auth/")) return await auth.handleAuth(req, res, url);
     if (url.pathname.startsWith("/api/")) return await handleApi(req, res, url);
     // In OAuth mode, gate the app shell behind login (dev mode is never gated).
@@ -780,6 +891,11 @@ const server = http.createServer(async (req, res) => {
       }
       if (!isAuthorizedIdentity(identity)) {
         res.writeHead(302, { Location: "/login.html?error=denied" });
+        return res.end();
+      }
+      // Signed in and on the roster, but the PIN is still outstanding.
+      if (!pinSatisfied(identity)) {
+        res.writeHead(302, { Location: "/pin.html" });
         return res.end();
       }
     }

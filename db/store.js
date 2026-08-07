@@ -19,6 +19,8 @@ const ROOT = path.join(__dirname, "..");
 const DATA = path.join(ROOT, "data");
 const SHIPMENTS_FILE = path.join(DATA, "shipments.json");
 const UPDATES_FILE = path.join(DATA, "updates.json");
+// Holds scrypt hashes only, never a PIN. Gitignored regardless.
+const PINS_FILE = path.join(DATA, "pins.json");
 
 function readJson(file, fallback) {
   try {
@@ -53,6 +55,25 @@ function createJsonStore() {
       current.updates = current.updates || [];
       current.updates.push(event);
       writeJson(UPDATES_FILE, current);
+    },
+    async getPin(email) {
+      const pins = readJson(PINS_FILE, { pins: {} }).pins || {};
+      return pins[String(email).toLowerCase()] || null;
+    },
+    async setPin(email, record) {
+      const current = readJson(PINS_FILE, { pins: {} });
+      current.pins = current.pins || {};
+      current.pins[String(email).toLowerCase()] = record;
+      writeJson(PINS_FILE, current);
+    },
+    async clearPin(email) {
+      const current = readJson(PINS_FILE, { pins: {} });
+      current.pins = current.pins || {};
+      delete current.pins[String(email).toLowerCase()];
+      writeJson(PINS_FILE, current);
+    },
+    async listPinEmails() {
+      return Object.keys(readJson(PINS_FILE, { pins: {} }).pins || {});
     },
   };
 }
@@ -158,6 +179,41 @@ function createPgStore() {
         ]
       );
     },
+    async getPin(email) {
+      await ensureReady();
+      const { rows } = await pool.query(
+        "SELECT email, salt, hash, set_by, updated_at FROM pins WHERE email = $1",
+        [String(email).toLowerCase()]
+      );
+      if (!rows.length) return null;
+      const r = rows[0];
+      return {
+        salt: r.salt,
+        hash: r.hash,
+        setBy: r.set_by || "",
+        updatedAt: r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at || ""),
+      };
+    },
+    async setPin(email, record) {
+      await ensureReady();
+      await pool.query(
+        `INSERT INTO pins (email, salt, hash, set_by, updated_at)
+         VALUES ($1,$2,$3,$4, now())
+         ON CONFLICT (email) DO UPDATE
+           SET salt = EXCLUDED.salt, hash = EXCLUDED.hash,
+               set_by = EXCLUDED.set_by, updated_at = now()`,
+        [String(email).toLowerCase(), record.salt, record.hash, record.setBy || ""]
+      );
+    },
+    async clearPin(email) {
+      await ensureReady();
+      await pool.query("DELETE FROM pins WHERE email = $1", [String(email).toLowerCase()]);
+    },
+    async listPinEmails() {
+      await ensureReady();
+      const { rows } = await pool.query("SELECT email FROM pins ORDER BY email");
+      return rows.map((r) => r.email);
+    },
   };
 }
 
@@ -169,4 +225,4 @@ function getStore() {
   return store;
 }
 
-module.exports = { getStore, SHIPMENTS_FILE, UPDATES_FILE };
+module.exports = { getStore, SHIPMENTS_FILE, UPDATES_FILE, PINS_FILE };

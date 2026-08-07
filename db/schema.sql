@@ -45,3 +45,16 @@ ALTER TABLE updates ADD COLUMN IF NOT EXISTS reason TEXT DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS idx_updates_shipment_id ON updates (shipment_id);
 CREATE INDEX IF NOT EXISTS idx_updates_created_at ON updates (created_at);
+
+-- Second auth factor. After Google SSO the user must also enter a PIN, so a
+-- compromised Google account alone does not open the CRM. Only the PIN's scrypt
+-- hash is stored — the PIN itself is never written anywhere. `email` is the real
+-- Google address, lowercased. PINs are set and reset by admins only; a row's
+-- absence means "no PIN issued yet", and that account cannot get in.
+CREATE TABLE IF NOT EXISTS pins (
+  email       TEXT PRIMARY KEY,
+  salt        TEXT NOT NULL,
+  hash        TEXT NOT NULL,
+  set_by      TEXT DEFAULT '',
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
