@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { getStore } = require("./db/store");
-const auth = require("./auth/google");
+const auth = require("./auth/session");
 const pin = require("./auth/pin");
 
 const ROOT = __dirname;
