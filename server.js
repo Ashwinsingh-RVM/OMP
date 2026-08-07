@@ -898,6 +898,45 @@ function serveStatic(req, res, url) {
   });
 }
 
+// Everything a visitor is allowed to load before they have signed in. Deliberately
+// tiny: login.html carries its own CSS inline, so the sign-in screen needs no
+// other file. Anything outside this set is a redirect until they are through.
+const PRE_LOGIN_PATHS = new Set(["/login.html", "/favicon.ico"]);
+// Additionally reachable once signed in but still owing a PIN.
+const PRE_PIN_PATHS = new Set(["/pin.html", "/pin.js"]);
+
+/**
+ * Decide where an unauthenticated or half-authenticated request should be sent
+ * instead of being served. Returns null when the request may proceed.
+ * Only consulted in OAuth mode, and only for non-/api, non-/auth paths.
+ */
+async function pageGateRedirect(req, url) {
+  const identity = auth.getIdentity(req);
+
+  if (!identity) {
+    return PRE_LOGIN_PATHS.has(url.pathname) ? null : "/login.html";
+  }
+  if (!isAuthorizedIdentity(identity)) {
+    // A real Google account, but not on the roster — never gets past this.
+    return PRE_LOGIN_PATHS.has(url.pathname) ? null : "/login.html?error=denied";
+  }
+  if (!(await pinSatisfied(identity))) {
+    // Signed in, PIN still outstanding: never entered on this session, or
+    // invalidated because an admin reset or cleared it.
+    if (PRE_PIN_PATHS.has(url.pathname) || PRE_LOGIN_PATHS.has(url.pathname)) return null;
+    return "/pin.html";
+  }
+  // Fully in. Someone who is already through has no reason to sit on the login
+  // or PIN screens; send them to the app.
+  if (url.pathname === "/login.html" || url.pathname === "/pin.html") return "/";
+  // PIN administration is admin-only at the page level too (the API behind it
+  // enforces this independently).
+  if (url.pathname === "/admin-pins.html" && !adminEmails().includes(String(identity.email).toLowerCase())) {
+    return "/";
+  }
+  return null;
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const ip = clientIp(req);
@@ -919,31 +958,15 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/auth/pin") return await handlePinSubmit(req, res);
     if (url.pathname.startsWith("/auth/")) return await auth.handleAuth(req, res, url);
     if (url.pathname.startsWith("/api/")) return await handleApi(req, res, url);
-    // In OAuth mode, gate the app shell behind login (dev mode is never gated).
-    // A valid Google account that is not on the roster is turned away here too:
-    // without this, once APP_PASSWORD is gone any Google user on the internet
-    // could sign in and load the (empty) dashboard shell.
-    const GATED_PAGES = ["/", "/index.html", "/admin-pins.html"];
-    if (auth.isEnabled() && GATED_PAGES.includes(url.pathname)) {
-      const identity = auth.getIdentity(req);
-      if (!identity) {
-        res.writeHead(302, { Location: "/login.html" });
-        return res.end();
-      }
-      if (!isAuthorizedIdentity(identity)) {
-        res.writeHead(302, { Location: "/login.html?error=denied" });
-        return res.end();
-      }
-      // Signed in and on the roster, but the PIN is still outstanding — either
-      // never entered on this session, or invalidated by an admin reset.
-      if (!(await pinSatisfied(identity))) {
-        res.writeHead(302, { Location: "/pin.html" });
-        return res.end();
-      }
-      // PIN administration is admin-only at the page level too, so a non-admin
-      // never even loads it (the API behind it enforces this independently).
-      if (url.pathname === "/admin-pins.html" && !adminEmails().includes(String(identity.email).toLowerCase())) {
-        res.writeHead(302, { Location: "/" });
+    // In OAuth mode nothing is served before login except the login screen
+    // itself: a visitor's first request lands on /login.html and there is
+    // nothing else to reach from there. Gating only the HTML pages would still
+    // have handed out core.js, styles.css, pages/*.js and the logo to anyone.
+    // (Dev mode is never gated — it binds to 127.0.0.1 and is laptop-only.)
+    if (auth.isEnabled()) {
+      const redirect = await pageGateRedirect(req, url);
+      if (redirect) {
+        res.writeHead(302, { Location: redirect, ...securityHeaders() });
         return res.end();
       }
     }
