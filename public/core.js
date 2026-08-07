@@ -251,7 +251,8 @@ const OMP = (() => {
     // The page is gated server-side as well; this just keeps it out of sight.
     try {
       const me = await (await fetch('/api/me')).json();
-      const oauth = me.authMode === 'google';
+      // 'secure' = real auth is on, by either sign-in method (see authGateOn()).
+      const oauth = me.authMode === 'secure';
       const link = document.getElementById('adminPinsLink');
       if (link && oauth && me.user && me.user.role === 'admin') link.hidden = false;
       // Signing out matters most on a shared machine — without this the only

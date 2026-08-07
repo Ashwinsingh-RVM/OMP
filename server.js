@@ -15,7 +15,22 @@ const PORT = Number(process.env.PORT || 4332);
 
 // Defined up here (above handleApi) so request-time code can reference it safely
 // for identity/host decisions. HOST (below, by listen) reuses the same value.
-const IS_DEPLOYED = Boolean(process.env.HOST || auth.isEnabled() || process.env.DATABASE_URL || process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === "production");
+// Two ways in, and they are independent:
+//   - Google SSO  (GOOGLE_CLIENT_ID/SECRET set)  -> sign in with Google, then PIN
+//   - email + PIN (ALLOW_PIN_LOGIN set)          -> no Google account needed
+// Either one turns real authentication on. Almost every gate in this file cares
+// about "is auth on at all", NOT "is Google configured" — mixing those up drops
+// the app back to dev mode, where ?user= picks any identity and the default is
+// admin with no cookie at all. Use authGateOn() for gates; auth.isEnabled() only
+// where the question is genuinely Google-specific.
+function pinLoginEnabled() {
+  return Boolean(process.env.ALLOW_PIN_LOGIN) && auth.sessionsEnabled();
+}
+function authGateOn() {
+  return auth.sessionsEnabled() && (auth.isEnabled() || pinLoginEnabled());
+}
+
+const IS_DEPLOYED = Boolean(process.env.HOST || authGateOn() || process.env.DATABASE_URL || process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === "production");
 
 const store = getStore();
 
@@ -574,8 +589,75 @@ async function pinRecordFor(email) {
   return { record: null, bootstrap: false };
 }
 
-// PIN submission. The Google session is already verified here, so the acting
-// email comes from the cookie and is never taken from the body.
+// Direct email + PIN login — the second way in, for people who would rather not
+// use Google (or when no Google client is configured at all).
+//
+// This form is reachable by anyone on the internet, which the Google-then-PIN
+// path was not, so it carries two extra defences beyond the shared per-email
+// lockout: a per-IP failure counter (the per-email lockout alone would let a
+// stranger lock a colleague out with five guesses), and a constant-ish response
+// time so the form cannot be used to discover who is on the roster.
+const LOGIN_FAIL_WINDOW_MS = 10 * 60 * 1000;
+const LOGIN_FAIL_MAX = 12;
+const loginFailMap = new Map(); // ip -> number[]
+
+function loginFailBlocked(ip) {
+  const now = Date.now();
+  const list = (loginFailMap.get(ip) || []).filter((t) => now - t < LOGIN_FAIL_WINDOW_MS);
+  if (list.length) loginFailMap.set(ip, list);
+  else loginFailMap.delete(ip);
+  return list.length >= LOGIN_FAIL_MAX;
+}
+function recordLoginFail(ip) {
+  const now = Date.now();
+  const list = (loginFailMap.get(ip) || []).filter((t) => now - t < LOGIN_FAIL_WINDOW_MS);
+  list.push(now);
+  if (loginFailMap.size > RATE_MAP_MAX_KEYS) loginFailMap.clear();
+  loginFailMap.set(ip, list);
+}
+
+async function handleDirectLogin(req, res, ip) {
+  if (!pinLoginEnabled()) return sendJson(res, { error: "Not available" }, 404);
+  if (loginFailBlocked(ip)) {
+    return sendJson(res, { error: "Too many failed sign-ins. Try again later." }, 429);
+  }
+  let payload;
+  try {
+    payload = await readBody(req);
+  } catch (e) {
+    return sendJson(res, { error: "Invalid request" }, 400);
+  }
+  const email = String(payload.email || "").trim().toLowerCase();
+  const supplied = String(payload.pin || "");
+  // One message for every failure — wrong PIN, unknown address, locked out at
+  // the email level. The caller learns nothing about who exists.
+  const deny = () => {
+    recordLoginFail(ip);
+    return sendJson(res, { error: "Incorrect email or PIN" }, 401);
+  };
+
+  if (!email || !isAuthorizedIdentity({ email }) || pin.isLockedOut(email)) {
+    await pin.dummyVerify(supplied);
+    return deny();
+  }
+  const { record } = await pinRecordFor(email);
+  if (!record) {
+    await pin.dummyVerify(supplied);
+    return deny();
+  }
+  if (!(await pin.verifyPin(supplied, record))) {
+    pin.recordFailure(email);
+    return deny();
+  }
+  pin.clearFailures(email);
+  // The PIN *was* the credential here, so the session starts already past the
+  // PIN gate — there is no second factor still to clear.
+  auth.issueSession(req, res, { email, name: email, pinAt: Date.now() });
+  return sendJson(res, { ok: true });
+}
+
+// PIN submission after Google sign-in. The session is already verified here, so
+// the acting email comes from the cookie and is never taken from the body.
 async function handlePinSubmit(req, res) {
   const identity = auth.getIdentity(req);
   if (!identity || !isAuthorizedIdentity(identity)) return sendJson(res, { error: "Not authorized" }, 403);
@@ -605,8 +687,9 @@ async function handlePinSubmit(req, res) {
 
 function resolveUser(req, url, shipments) {
   const users = buildUsers(shipments);
-  if (auth.isEnabled()) {
-    // OAuth mode: identity comes from the signed session cookie; ?user= is ignored.
+  if (authGateOn()) {
+    // Authenticated mode: identity comes from the signed session cookie, no
+    // matter which login minted it. ?user= is ignored.
     const identity = auth.getIdentity(req);
     if (!identity) return { name: "Guest", email: "guest", role: "guest", scope: "none" };
     const email = String(identity.email || "").toLowerCase();
@@ -623,7 +706,7 @@ function resolveUser(req, url, shipments) {
     // Known-good Google login but not a recognised POC → flagged guest, no shipments.
     return { name: identity.name || identity.email, email, role: "guest", scope: "none" };
   }
-  // Dev mode (no OAuth env): ?user=<email> selects a KNOWN user only.
+  // Dev mode (no auth env at all): ?user=<email> selects a KNOWN user only.
   // Default is the local admin (dev convenience, and the server now binds to
   // 127.0.0.1 so this is not network-reachable). An unknown user must NOT
   // fall back to admin — it becomes a no-scope guest.
@@ -754,8 +837,15 @@ async function handleApi(req, res, url) {
   // session with no PIN could otherwise curl /api/bootstrap and pull all 130
   // shipments, which is exactly the compromised-account case the PIN exists to
   // stop. /api/me stays open so the frontend can tell WHY it is being blocked.
-  if (auth.isEnabled()) {
+  if (authGateOn()) {
     const identity = auth.getIdentity(req);
+    // No session, or a session for somebody not on the roster: refuse outright
+    // rather than answering with an empty payload. /api/me is the one exception
+    // — the login page reads it to know which sign-in methods to offer, and the
+    // frontend reads it to learn why it is being blocked.
+    if (url.pathname !== "/api/me" && (!identity || !isAuthorizedIdentity(identity))) {
+      return sendJson(res, { error: "Not authenticated" }, 403);
+    }
     const gated = identity && isAuthorizedIdentity(identity) && !(await pinSatisfied(identity));
     if (gated && url.pathname !== "/api/me") {
       return sendJson(res, { error: "PIN required", pinRequired: true }, 403);
@@ -769,16 +859,19 @@ async function handleApi(req, res, url) {
   const canSeeAll = user.role === "admin" || user.role === "associate";
   const readable = (canSeeAll ? state.shipments : []).map((s) => ({ ...s, canEdit: canEditShipment(s, user) }));
   if (req.method === "GET" && url.pathname === "/api/me") {
-    const identity = auth.isEnabled() ? auth.getIdentity(req) : null;
+    const identity = authGateOn() ? auth.getIdentity(req) : null;
     return sendJson(res, {
       user,
-      authMode: auth.isEnabled() ? "google" : "dev",
-      authenticated: auth.isEnabled() ? Boolean(identity) : true,
+      authMode: authGateOn() ? "secure" : "dev",
+      authenticated: authGateOn() ? Boolean(identity) : true,
       pinRequired: Boolean(identity && isAuthorizedIdentity(identity) && !(await pinSatisfied(identity))),
+      // Which sign-in methods the login page should offer. Readable before
+      // sign-in by design — it reveals nothing beyond what the page shows.
+      loginMethods: { google: auth.isEnabled(), pin: pinLoginEnabled() },
     });
   }
   if (req.method === "GET" && url.pathname === "/api/users") {
-    if (auth.isEnabled() && user.role !== "admin") return sendJson(res, { error: "Forbidden" }, 403);
+    if (authGateOn() && user.role !== "admin") return sendJson(res, { error: "Forbidden" }, 403);
     return sendJson(res, { users });
   }
   // Admin-only PIN administration. Users cannot set or change their own PIN;
@@ -786,7 +879,7 @@ async function handleApi(req, res, url) {
   // are created. Reaching here already required clearing the PIN gate above,
   // so the endpoint that manages PINs is not itself a way around them.
   if (url.pathname === "/api/admin/pins") {
-    if (!auth.isEnabled()) return sendJson(res, { error: "Not available in dev mode" }, 400);
+    if (!authGateOn()) return sendJson(res, { error: "Not available in dev mode" }, 400);
     if (user.role !== "admin") return sendJson(res, { error: "Forbidden" }, 403);
 
     if (req.method === "GET") {
@@ -839,7 +932,7 @@ async function handleApi(req, res, url) {
       stages: STAGE_ORDER.map((key) => ({ key, label: STAGE_LABELS[key] })),
       docs: DOC_LABELS,
       user,
-      users: (auth.isEnabled() && user.role !== "admin") ? [] : users,
+      users: (authGateOn() && user.role !== "admin") ? [] : users,
     });
   }
   if (req.method === "GET" && url.pathname.startsWith("/api/shipments/")) {
@@ -864,7 +957,7 @@ async function handleApi(req, res, url) {
     // laptop convenience. When deployed or OAuth is on, ignore the body actor
     // and attribute the write to the server-resolved user.
     let actingUser = user;
-    if (!auth.isEnabled() && !IS_DEPLOYED) {
+    if (!authGateOn() && !IS_DEPLOYED) {
       const byBody = users.find((u) => u.email === String(payload.actorEmail || "").toLowerCase());
       if (byBody) actingUser = byBody;
     }
@@ -901,7 +994,9 @@ function serveStatic(req, res, url) {
 // Everything a visitor is allowed to load before they have signed in. Deliberately
 // tiny: login.html carries its own CSS inline, so the sign-in screen needs no
 // other file. Anything outside this set is a redirect until they are through.
-const PRE_LOGIN_PATHS = new Set(["/login.html", "/favicon.ico"]);
+// login.js must be here too: the email+PIN form needs a submit handler, the CSP
+// forbids inline script, so without it the sign-in page loads with a dead form.
+const PRE_LOGIN_PATHS = new Set(["/login.html", "/login.js", "/favicon.ico"]);
 // Additionally reachable once signed in but still owing a PIN.
 const PRE_PIN_PATHS = new Set(["/pin.html", "/pin.js"]);
 
@@ -955,6 +1050,7 @@ const server = http.createServer(async (req, res) => {
     if (rateLimited(ip)) {
       return tooManyRequests(res, Math.ceil(RATE_WINDOW_MS / 1000));
     }
+    if (req.method === "POST" && url.pathname === "/auth/login") return await handleDirectLogin(req, res, ip);
     if (req.method === "POST" && url.pathname === "/auth/pin") return await handlePinSubmit(req, res);
     if (url.pathname.startsWith("/auth/")) return await auth.handleAuth(req, res, url);
     if (url.pathname.startsWith("/api/")) return await handleApi(req, res, url);
@@ -963,7 +1059,7 @@ const server = http.createServer(async (req, res) => {
     // nothing else to reach from there. Gating only the HTML pages would still
     // have handed out core.js, styles.css, pages/*.js and the logo to anyone.
     // (Dev mode is never gated — it binds to 127.0.0.1 and is laptop-only.)
-    if (auth.isEnabled()) {
+    if (authGateOn()) {
       const redirect = await pageGateRedirect(req, url);
       if (redirect) {
         res.writeHead(302, { Location: redirect, ...securityHeaders() });

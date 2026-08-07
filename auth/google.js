@@ -27,8 +27,17 @@ const CALLBACK_URL = process.env.GOOGLE_CALLBACK_URL || "";
 const AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 
+// Is the Google sign-in button available? Google-specific — do not use this to
+// ask "is authentication on at all". Since email+PIN login can run without a
+// Google client, that question is answered by authGateOn() in server.js.
 function isEnabled() {
   return Boolean(CLIENT_ID && CLIENT_SECRET && SESSION_SECRET);
+}
+
+// Can we mint and read signed sessions? True for either login method — the
+// cookie machinery below is not Google-specific.
+function sessionsEnabled() {
+  return Boolean(SESSION_SECRET);
 }
 
 /* ----------------------------- cookie helpers ----------------------------- */
@@ -104,7 +113,9 @@ function appendSetCookie(res, cookie) {
 
 /* ----------------------------- identity ----------------------------- */
 function getIdentity(req) {
-  if (!isEnabled()) return null;
+  // Deliberately NOT isEnabled(): a session minted by email+PIN login must
+  // verify even when no Google client is configured.
+  if (!sessionsEnabled()) return null;
   const cookies = parseCookies(req);
   const session = verifySession(cookies[SESSION_COOKIE]);
   if (!session || !session.email) return null;
@@ -120,6 +131,23 @@ function getIdentity(req) {
  * pinAt after a correct PIN). The original `exp` is preserved, so passing the
  * PIN gate does not silently extend the 7-day session.
  */
+/**
+ * Start a session for a login that did not come from Google (email + PIN). The
+ * PIN was the credential, so pinAt is stamped here — there is no second gate to
+ * clear afterwards.
+ */
+function issueSession(req, res, { email, name, pinAt }) {
+  if (!sessionsEnabled()) return false;
+  const payload = {
+    email: String(email).toLowerCase(),
+    name: name || email,
+    pinAt: pinAt || Date.now(),
+    exp: Date.now() + SESSION_TTL_MS,
+  };
+  setCookie(res, SESSION_COOKIE, signSession(payload), { maxAgeMs: SESSION_TTL_MS, req });
+  return true;
+}
+
 function updateSession(req, res, extra) {
   const cookies = parseCookies(req);
   const session = verifySession(cookies[SESSION_COOKIE]);
@@ -137,9 +165,11 @@ function callbackUrlFor(req) {
 
 /* ----------------------------- route handler ----------------------------- */
 async function handleAuth(req, res, url) {
-  if (url.pathname === "/auth/google") return startLogin(req, res);
-  if (url.pathname === "/auth/google/callback") return handleCallback(req, res, url);
+  // Logout works for any session; the Google routes only exist when a Google
+  // client is configured (the app can run on email+PIN login alone).
   if (url.pathname === "/auth/logout") return handleLogout(req, res);
+  if (isEnabled() && url.pathname === "/auth/google") return startLogin(req, res);
+  if (isEnabled() && url.pathname === "/auth/google/callback") return handleCallback(req, res, url);
   res.writeHead(404, { "Content-Type": "text/plain" });
   return res.end("Not found");
 }
@@ -229,4 +259,4 @@ function decodeIdToken(idToken) {
   }
 }
 
-module.exports = { isEnabled, handleAuth, getIdentity, updateSession };
+module.exports = { isEnabled, sessionsEnabled, handleAuth, getIdentity, updateSession, issueSession };

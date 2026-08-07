@@ -60,6 +60,16 @@ async function verifyPin(pin, record) {
   return crypto.timingSafeEqual(a, b);
 }
 
+// Burn the same ~100ms as a real check when there is nothing to check against.
+// Without this, "no such account" returns instantly while "wrong PIN" takes a
+// visible beat — which tells an attacker on the open login form exactly which
+// addresses are on the roster.
+const DUMMY_SALT = crypto.randomBytes(16).toString("hex");
+async function dummyVerify(pin) {
+  await scrypt(String(pin || ""), DUMMY_SALT);
+  return false;
+}
+
 /* ----------------------------- lockout ----------------------------- */
 function recentFailures(email) {
   const key = String(email || "").toLowerCase();
@@ -97,6 +107,7 @@ module.exports = {
   isValidPinFormat,
   hashPin,
   verifyPin,
+  dummyVerify,
   isLockedOut,
   attemptsLeft,
   recordFailure,
