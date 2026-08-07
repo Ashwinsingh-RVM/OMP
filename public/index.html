@@ -19,6 +19,9 @@
     <div class="header-meta">
       <label class="login-label">Signed in as <select id="userSelect"></select></label>
       <span id="userName">Local Admin</span>
+      <!-- Shown by core.js only for admins in OAuth mode; the page itself is
+           gated server-side too, so hiding it is convenience, not security. -->
+      <a class="admin-link" id="adminPinsLink" href="/admin-pins.html" hidden>Manage PINs</a>
     </div>
   </header>
 

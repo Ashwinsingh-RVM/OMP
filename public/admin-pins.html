@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Manage PINs · OMP CRM</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    .pin-wrap { max-width: 780px; margin: 32px auto; padding: 0 20px; }
+    .pin-wrap h1 { font-size: 22px; margin: 0 0 6px; }
+    .pin-wrap .sub { color: #6b7280; font-size: 14px; margin: 0 0 24px; }
+    .pin-table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e3e6ea; border-radius: 10px; overflow: hidden; }
+    .pin-table th, .pin-table td { padding: 11px 14px; text-align: left; font-size: 14px; border-bottom: 1px solid #eef0f3; }
+    .pin-table th { background: #f6f7f9; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #6b7280; }
+    .pin-table tr:last-child td { border-bottom: none; }
+    .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+    .tag.set { background: #e6f4ee; color: #0a5540; }
+    .tag.unset { background: #fdeceb; color: #a52a1f; }
+    .tag.admin { background: #fff4d6; color: #8a6100; }
+    .pin-table input { width: 120px; padding: 6px 9px; border: 1px solid #d4d9df; border-radius: 7px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .12em; }
+    .pin-table button { padding: 6px 12px; border-radius: 7px; border: none; background: #0a5540; color: #fff;
+      font-weight: 600; font-size: 13px; cursor: pointer; }
+    .pin-table button.ghost { background: transparent; color: #a52a1f; border: 1px solid #e3c4c0; }
+    .pin-table button:disabled { opacity: .5; cursor: default; }
+    .msg { margin: 16px 0 0; font-size: 13px; min-height: 20px; }
+    .msg.ok { color: #0a5540; }
+    .msg.bad { color: #a52a1f; }
+    .note { margin-top: 26px; font-size: 12.5px; color: #6b7280; line-height: 1.6; }
+    .back { display: inline-block; margin-bottom: 18px; font-size: 13px; color: #0a5540; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="pin-wrap">
+    <a class="back" href="/">&larr; Back to OMP CRM</a>
+    <h1>Manage PINs</h1>
+    <p class="sub">
+      Each person signs in with their Recykal Google account and then enters a PIN.
+      Set the PIN here and pass it to them yourself &mdash; over a call or in person,
+      not over email. Nobody can change their own PIN.
+    </p>
+    <table class="pin-table">
+      <thead>
+        <tr><th>Google account</th><th>Role</th><th>PIN status</th><th>Set / reset</th></tr>
+      </thead>
+      <tbody id="rows"><tr><td colspan="4">Loading…</td></tr></tbody>
+    </table>
+    <p class="msg" id="msg"></p>
+    <p class="note">
+      PINs are 6&ndash;12 digits and are stored only as a scrypt hash &mdash; nobody, including you,
+      can read back an existing PIN. If someone forgets theirs, set a new one.
+      Five wrong attempts locks that account for 15 minutes; setting a new PIN clears the lock.
+      Once every person below shows <strong>PIN set</strong>, remove the
+      <code>BOOTSTRAP_ADMIN_PIN</code> variable from Railway.
+    </p>
+  </div>
+  <script src="/admin-pins.js"></script>
+</body>
+</html>

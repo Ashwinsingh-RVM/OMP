@@ -883,7 +883,8 @@ const server = http.createServer(async (req, res) => {
     // A valid Google account that is not on the roster is turned away here too:
     // without this, once APP_PASSWORD is gone any Google user on the internet
     // could sign in and load the (empty) dashboard shell.
-    if (auth.isEnabled() && (url.pathname === "/" || url.pathname === "/index.html")) {
+    const GATED_PAGES = ["/", "/index.html", "/admin-pins.html"];
+    if (auth.isEnabled() && GATED_PAGES.includes(url.pathname)) {
       const identity = auth.getIdentity(req);
       if (!identity) {
         res.writeHead(302, { Location: "/login.html" });
@@ -896,6 +897,12 @@ const server = http.createServer(async (req, res) => {
       // Signed in and on the roster, but the PIN is still outstanding.
       if (!pinSatisfied(identity)) {
         res.writeHead(302, { Location: "/pin.html" });
+        return res.end();
+      }
+      // PIN administration is admin-only at the page level too, so a non-admin
+      // never even loads it (the API behind it enforces this independently).
+      if (url.pathname === "/admin-pins.html" && !adminEmails().includes(String(identity.email).toLowerCase())) {
+        res.writeHead(302, { Location: "/" });
         return res.end();
       }
     }

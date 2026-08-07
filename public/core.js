@@ -247,6 +247,13 @@ const OMP = (() => {
         renderActive();
       };
     }
+    // PIN administration only exists in OAuth mode, and only admins can use it.
+    // The page is gated server-side as well; this just keeps it out of sight.
+    try {
+      const me = await (await fetch('/api/me')).json();
+      const link = document.getElementById('adminPinsLink');
+      if (link && me.authMode === 'google' && me.user && me.user.role === 'admin') link.hidden = false;
+    } catch (e) { /* header link is optional — never block boot on it */ }
     document.querySelectorAll('.view-tab').forEach(b => b.onclick = () => setView(b.dataset.view));
     const first = ranked(filtered())[0] || state.shipments[0];
     if (first) await selectShipment(first.shipmentId, false);
