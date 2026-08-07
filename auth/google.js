@@ -1,42 +1,32 @@
 /**
- * Zero-dependency Google OAuth 2.0 (auth-code flow) + signed-cookie sessions,
- * mounted on the existing Node `http` server (no Express).
+ * Signed-cookie sessions, mounted on the plain Node `http` server (no Express,
+ * no dependencies).
  *
- * Enabled only when GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET + SESSION_SECRET
- * are all set. When any is missing, isEnabled() is false and server.js keeps
- * the current dev behavior (?user=<email>) completely untouched.
+ * Sessions are minted by the email + PIN login in server.js (handleDirectLogin)
+ * and carried in one HttpOnly, SameSite=Lax cookie holding {email, name, pinAt,
+ * exp}, signed with HMAC-SHA256. Nothing is stored server-side, so there is no
+ * session table to keep — revocation works by comparing the session's pinAt
+ * against when that person's PIN was last written (see pinSatisfied()).
  *
- * Routes (handled by handleAuth):
- *   GET /auth/google           -> redirect to Google consent screen
- *   GET /auth/google/callback  -> exchange code, verify id_token, set session
- *   GET /auth/logout           -> clear session cookie
+ * Enabled only when SESSION_SECRET is set. Without it the app runs in local dev
+ * mode, where identity comes from ?user=<email> and the server binds to
+ * 127.0.0.1. server.js refuses to boot in that state if it looks deployed.
  *
- * Session identity is exposed via getIdentity(req) -> { email, name } | null.
+ * Routes (handleAuth):
+ *   GET /auth/logout  -> clear the session cookie
+ *
+ * Identity is exposed via getIdentity(req) -> { email, name, pinAt } | null.
  */
 const crypto = require("crypto");
 
 const SESSION_COOKIE = "omp_session";
-const STATE_COOKIE = "omp_oauth_state";
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
-const CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
-const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
 const SESSION_SECRET = process.env.SESSION_SECRET || "";
-const CALLBACK_URL = process.env.GOOGLE_CALLBACK_URL || "";
 
-const AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
-const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
-
-// Is the Google sign-in button available? Google-specific — do not use this to
-// ask "is authentication on at all". Since email+PIN login can run without a
-// Google client, that question is answered by authGateOn() in server.js.
+// Can we mint and read signed sessions? This is what "is authentication on"
+// means for this app.
 function isEnabled() {
-  return Boolean(CLIENT_ID && CLIENT_SECRET && SESSION_SECRET);
-}
-
-// Can we mint and read signed sessions? True for either login method — the
-// cookie machinery below is not Google-specific.
-function sessionsEnabled() {
   return Boolean(SESSION_SECRET);
 }
 
@@ -113,31 +103,21 @@ function appendSetCookie(res, cookie) {
 
 /* ----------------------------- identity ----------------------------- */
 function getIdentity(req) {
-  // Deliberately NOT isEnabled(): a session minted by email+PIN login must
-  // verify even when no Google client is configured.
-  if (!sessionsEnabled()) return null;
+  if (!isEnabled()) return null;
   const cookies = parseCookies(req);
   const session = verifySession(cookies[SESSION_COOKIE]);
   if (!session || !session.email) return null;
-  // pinAt (set once the PIN is accepted) rides inside the same signed session
-  // rather than a second cookie. A separate PIN cookie could be paired with a
-  // different user's session; carrying the flag in the signed payload binds it
-  // to this identity structurally, with nothing extra to remember to check.
+  // pinAt records when the PIN behind this session was accepted. It is compared
+  // against when that PIN was last written, so an admin reset invalidates live
+  // sessions instead of leaving them good for the rest of the 7 days.
   return { email: session.email, name: session.name || session.email, pinAt: session.pinAt || 0 };
 }
 
 /**
- * Re-issue the current session with extra fields merged in (used to stamp
- * pinAt after a correct PIN). The original `exp` is preserved, so passing the
- * PIN gate does not silently extend the 7-day session.
- */
-/**
- * Start a session for a login that did not come from Google (email + PIN). The
- * PIN was the credential, so pinAt is stamped here — there is no second gate to
- * clear afterwards.
+ * Start a session after a correct email + PIN.
  */
 function issueSession(req, res, { email, name, pinAt }) {
-  if (!sessionsEnabled()) return false;
+  if (!isEnabled()) return false;
   const payload = {
     email: String(email).toLowerCase(),
     name: name || email,
@@ -148,98 +128,11 @@ function issueSession(req, res, { email, name, pinAt }) {
   return true;
 }
 
-function updateSession(req, res, extra) {
-  const cookies = parseCookies(req);
-  const session = verifySession(cookies[SESSION_COOKIE]);
-  if (!session) return false;
-  const merged = { ...session, ...extra };
-  setCookie(res, SESSION_COOKIE, signSession(merged), { maxAgeMs: Math.max(0, merged.exp - Date.now()), req });
-  return true;
-}
-
-function callbackUrlFor(req) {
-  if (CALLBACK_URL) return CALLBACK_URL;
-  const proto = isSecureRequest(req) ? "https" : "http";
-  return `${proto}://${req.headers.host}/auth/google/callback`;
-}
-
 /* ----------------------------- route handler ----------------------------- */
 async function handleAuth(req, res, url) {
-  // Logout works for any session; the Google routes only exist when a Google
-  // client is configured (the app can run on email+PIN login alone).
   if (url.pathname === "/auth/logout") return handleLogout(req, res);
-  if (isEnabled() && url.pathname === "/auth/google") return startLogin(req, res);
-  if (isEnabled() && url.pathname === "/auth/google/callback") return handleCallback(req, res, url);
   res.writeHead(404, { "Content-Type": "text/plain" });
   return res.end("Not found");
-}
-
-function startLogin(req, res) {
-  const state = b64urlEncode(crypto.randomBytes(16));
-  setCookie(res, STATE_COOKIE, state, { maxAgeMs: 10 * 60 * 1000, req });
-  const params = new URLSearchParams({
-    client_id: CLIENT_ID,
-    redirect_uri: callbackUrlFor(req),
-    response_type: "code",
-    scope: "openid email profile",
-    state,
-    access_type: "online",
-    prompt: "select_account",
-  });
-  res.writeHead(302, { Location: `${AUTH_ENDPOINT}?${params.toString()}` });
-  res.end();
-}
-
-async function handleCallback(req, res, url) {
-  const code = url.searchParams.get("code");
-  const state = url.searchParams.get("state");
-  const cookies = parseCookies(req);
-  if (!code || !state || state !== cookies[STATE_COOKIE]) {
-    res.writeHead(400, { "Content-Type": "text/plain" });
-    return res.end("Invalid OAuth state");
-  }
-  clearCookie(res, STATE_COOKIE);
-
-  try {
-    const tokenRes = await fetch(TOKEN_ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        code,
-        client_id: CLIENT_ID,
-        client_secret: CLIENT_SECRET,
-        redirect_uri: callbackUrlFor(req),
-        grant_type: "authorization_code",
-      }),
-    });
-    if (!tokenRes.ok) {
-      const text = await tokenRes.text();
-      throw new Error(`token exchange failed: ${tokenRes.status} ${text}`);
-    }
-    const tokens = await tokenRes.json();
-    const claims = decodeIdToken(tokens.id_token);
-    if (!claims) throw new Error("missing id_token");
-
-    // The token exchange is a direct server-to-server TLS call to Google, so
-    // decode + claim checks are sufficient (full RS256 JWKS verification is not
-    // required for the auth-code flow).
-    const validIss = ["accounts.google.com", "https://accounts.google.com"];
-    if (claims.aud !== CLIENT_ID) throw new Error("aud mismatch");
-    if (!validIss.includes(claims.iss)) throw new Error("iss mismatch");
-    if (claims.exp && Date.now() / 1000 > claims.exp) throw new Error("id_token expired");
-    if (claims.email_verified === false) throw new Error("email not verified");
-
-    const email = String(claims.email || "").toLowerCase();
-    const name = claims.name || email;
-    const token = signSession({ email, name, exp: Date.now() + SESSION_TTL_MS });
-    setCookie(res, SESSION_COOKIE, token, { maxAgeMs: SESSION_TTL_MS, req });
-    res.writeHead(302, { Location: "/" });
-    res.end();
-  } catch (error) {
-    console.error("[auth] callback error:", error);
-    res.writeHead(302, { Location: "/login.html?error=auth" });
-    res.end();
-  }
 }
 
 function handleLogout(req, res) {
@@ -248,15 +141,4 @@ function handleLogout(req, res) {
   res.end();
 }
 
-function decodeIdToken(idToken) {
-  if (!idToken) return null;
-  const parts = idToken.split(".");
-  if (parts.length !== 3) return null;
-  try {
-    return JSON.parse(b64urlDecode(parts[1]).toString("utf8"));
-  } catch (e) {
-    return null;
-  }
-}
-
-module.exports = { isEnabled, sessionsEnabled, handleAuth, getIdentity, updateSession, issueSession };
+module.exports = { isEnabled, handleAuth, getIdentity, issueSession };

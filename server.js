@@ -15,19 +15,13 @@ const PORT = Number(process.env.PORT || 4332);
 
 // Defined up here (above handleApi) so request-time code can reference it safely
 // for identity/host decisions. HOST (below, by listen) reuses the same value.
-// Two ways in, and they are independent:
-//   - Google SSO  (GOOGLE_CLIENT_ID/SECRET set)  -> sign in with Google, then PIN
-//   - email + PIN (ALLOW_PIN_LOGIN set)          -> no Google account needed
-// Either one turns real authentication on. Almost every gate in this file cares
-// about "is auth on at all", NOT "is Google configured" — mixing those up drops
-// the app back to dev mode, where ?user= picks any identity and the default is
-// admin with no cookie at all. Use authGateOn() for gates; auth.isEnabled() only
-// where the question is genuinely Google-specific.
-function pinLoginEnabled() {
-  return Boolean(process.env.ALLOW_PIN_LOGIN) && auth.sessionsEnabled();
-}
+// Sign-in is work email + PIN. Authentication is on whenever SESSION_SECRET is
+// set; without it the app runs in local dev mode, where ?user= picks any
+// identity and the default is admin with no cookie at all. That is safe on a
+// laptop bound to 127.0.0.1 and catastrophic anywhere else, so the boot guard
+// near server.listen refuses to start a deployed instance without the secret.
 function authGateOn() {
-  return auth.sessionsEnabled() && (auth.isEnabled() || pinLoginEnabled());
+  return auth.isEnabled();
 }
 
 const IS_DEPLOYED = Boolean(process.env.HOST || authGateOn() || process.env.DATABASE_URL || process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === "production");
@@ -617,7 +611,7 @@ function recordLoginFail(ip) {
 }
 
 async function handleDirectLogin(req, res, ip) {
-  if (!pinLoginEnabled()) return sendJson(res, { error: "Not available" }, 404);
+  if (!authGateOn()) return sendJson(res, { error: "Not available" }, 404);
   if (loginFailBlocked(ip)) {
     return sendJson(res, { error: "Too many failed sign-ins. Try again later." }, 429);
   }
@@ -653,35 +647,6 @@ async function handleDirectLogin(req, res, ip) {
   // The PIN *was* the credential here, so the session starts already past the
   // PIN gate — there is no second factor still to clear.
   auth.issueSession(req, res, { email, name: email, pinAt: Date.now() });
-  return sendJson(res, { ok: true });
-}
-
-// PIN submission after Google sign-in. The session is already verified here, so
-// the acting email comes from the cookie and is never taken from the body.
-async function handlePinSubmit(req, res) {
-  const identity = auth.getIdentity(req);
-  if (!identity || !isAuthorizedIdentity(identity)) return sendJson(res, { error: "Not authorized" }, 403);
-  const email = String(identity.email).toLowerCase();
-  if (pin.isLockedOut(email)) {
-    return sendJson(res, { error: "Too many incorrect PINs. Try again later." }, 429);
-  }
-  let payload;
-  try {
-    payload = await readBody(req);
-  } catch (e) {
-    return sendJson(res, { error: "Invalid request" }, 400);
-  }
-  const supplied = String(payload.pin || "");
-  const { record } = await pinRecordFor(email);
-  // Same generic message whether no PIN was ever issued or the PIN is wrong —
-  // never reveal which accounts have a PIN set.
-  const ok = record ? await pin.verifyPin(supplied, record) : false;
-  if (!ok) {
-    pin.recordFailure(email);
-    return sendJson(res, { error: "Incorrect PIN", attemptsLeft: pin.attemptsLeft(email) }, 401);
-  }
-  pin.clearFailures(email);
-  auth.updateSession(req, res, { pinAt: Date.now() });
   return sendJson(res, { ok: true });
 }
 
@@ -846,9 +811,10 @@ async function handleApi(req, res, url) {
     if (url.pathname !== "/api/me" && (!identity || !isAuthorizedIdentity(identity))) {
       return sendJson(res, { error: "Not authenticated" }, 403);
     }
+    // Signature-valid session whose PIN has since been reset or cleared.
     const gated = identity && isAuthorizedIdentity(identity) && !(await pinSatisfied(identity));
     if (gated && url.pathname !== "/api/me") {
-      return sendJson(res, { error: "PIN required", pinRequired: true }, 403);
+      return sendJson(res, { error: "Session expired. Sign in again.", pinRequired: true }, 403);
     }
   }
   const state = await loadState();
@@ -864,10 +830,8 @@ async function handleApi(req, res, url) {
       user,
       authMode: authGateOn() ? "secure" : "dev",
       authenticated: authGateOn() ? Boolean(identity) : true,
+      // Session no longer valid — the PIN behind it was reset or cleared.
       pinRequired: Boolean(identity && isAuthorizedIdentity(identity) && !(await pinSatisfied(identity))),
-      // Which sign-in methods the login page should offer. Readable before
-      // sign-in by design — it reveals nothing beyond what the page shows.
-      loginMethods: { google: auth.isEnabled(), pin: pinLoginEnabled() },
     });
   }
   if (req.method === "GET" && url.pathname === "/api/users") {
@@ -997,13 +961,11 @@ function serveStatic(req, res, url) {
 // login.js must be here too: the email+PIN form needs a submit handler, the CSP
 // forbids inline script, so without it the sign-in page loads with a dead form.
 const PRE_LOGIN_PATHS = new Set(["/login.html", "/login.js", "/favicon.ico"]);
-// Additionally reachable once signed in but still owing a PIN.
-const PRE_PIN_PATHS = new Set(["/pin.html", "/pin.js"]);
 
 /**
  * Decide where an unauthenticated or half-authenticated request should be sent
  * instead of being served. Returns null when the request may proceed.
- * Only consulted in OAuth mode, and only for non-/api, non-/auth paths.
+ * Only consulted when auth is on, and only for non-/api, non-/auth paths.
  */
 async function pageGateRedirect(req, url) {
   const identity = auth.getIdentity(req);
@@ -1012,18 +974,18 @@ async function pageGateRedirect(req, url) {
     return PRE_LOGIN_PATHS.has(url.pathname) ? null : "/login.html";
   }
   if (!isAuthorizedIdentity(identity)) {
-    // A real Google account, but not on the roster — never gets past this.
+    // Signed in once, but no longer on the roster — never gets past this.
     return PRE_LOGIN_PATHS.has(url.pathname) ? null : "/login.html?error=denied";
   }
   if (!(await pinSatisfied(identity))) {
-    // Signed in, PIN still outstanding: never entered on this session, or
-    // invalidated because an admin reset or cleared it.
-    if (PRE_PIN_PATHS.has(url.pathname) || PRE_LOGIN_PATHS.has(url.pathname)) return null;
-    return "/pin.html";
+    // The PIN behind this session was reset or cleared, so it is spent. The
+    // PRE_LOGIN_PATHS check is what stops /login.html redirecting to itself
+    // forever: the cookie is still signature-valid, only pinAt is stale.
+    if (PRE_LOGIN_PATHS.has(url.pathname)) return null;
+    return "/login.html?error=expired";
   }
-  // Fully in. Someone who is already through has no reason to sit on the login
-  // or PIN screens; send them to the app.
-  if (url.pathname === "/login.html" || url.pathname === "/pin.html") return "/";
+  // Fully in — no reason to sit on the sign-in screen.
+  if (url.pathname === "/login.html") return "/";
   // PIN administration is admin-only at the page level too (the API behind it
   // enforces this independently).
   if (url.pathname === "/admin-pins.html" && !adminEmails().includes(String(identity.email).toLowerCase())) {
@@ -1051,7 +1013,6 @@ const server = http.createServer(async (req, res) => {
       return tooManyRequests(res, Math.ceil(RATE_WINDOW_MS / 1000));
     }
     if (req.method === "POST" && url.pathname === "/auth/login") return await handleDirectLogin(req, res, ip);
-    if (req.method === "POST" && url.pathname === "/auth/pin") return await handlePinSubmit(req, res);
     if (url.pathname.startsWith("/auth/")) return await auth.handleAuth(req, res, url);
     if (url.pathname.startsWith("/api/")) return await handleApi(req, res, url);
     // In OAuth mode nothing is served before login except the login screen
@@ -1077,6 +1038,20 @@ const server = http.createServer(async (req, res) => {
 // Bind to loopback for local dev so the app is laptop-only. Bind all interfaces
 // only when actually deployed (Railway/prod, OAuth on, a DATABASE_URL, or HOST set).
 // IS_DEPLOYED is defined near the top of the file.
+// Fail closed. Authentication now hangs off a single variable, and a deployed
+// instance without it would bind 0.0.0.0 with resolveUser in dev mode, where
+// ?user=local@recykal.test is admin over every shipment and needs no cookie.
+// One missing env var on Railway would publish the whole CRM, so refuse to run.
+if (IS_DEPLOYED && !authGateOn()) {
+  console.error(
+    "[boot] Refusing to start: this looks like a deployed instance " +
+      "(HOST/DATABASE_URL/RAILWAY_ENVIRONMENT/NODE_ENV set) but SESSION_SECRET is missing, " +
+      "so authentication would be OFF and every visitor would be an admin.\n" +
+      "[boot] Set SESSION_SECRET (and ADMIN_EMAILS / AUTH_USERS) and start again."
+  );
+  process.exit(1);
+}
+
 const HOST = process.env.HOST || (IS_DEPLOYED ? "0.0.0.0" : "127.0.0.1");
 server.listen(PORT, HOST, () => {
   const shown = HOST === "0.0.0.0" ? "0.0.0.0 (all interfaces)" : HOST;

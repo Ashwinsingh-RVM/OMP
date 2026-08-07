@@ -1,6 +1,4 @@
 // Sign-in page. Separate file because the CSP drops script 'unsafe-inline'.
-// Two ways in, and the server decides which are on: Google SSO (then a PIN) and
-// direct email + PIN. /api/me reports both.
 (function () {
   var err = document.getElementById("err");
   var form = document.getElementById("pinForm");
@@ -9,22 +7,10 @@
   var pinInput = document.getElementById("pin");
 
   var initial = new URLSearchParams(location.search).get("error");
-  if (initial === "auth") err.textContent = "Sign-in failed. Please try again.";
-  else if (initial === "denied") err.textContent = "This account does not have access to OMP CRM. Contact the admin to be added.";
+  if (initial === "denied") err.textContent = "This account does not have access to OMP CRM. Contact the admin to be added.";
+  else if (initial === "expired") err.textContent = "Your session has ended. Sign in again.";
 
-  fetch("/api/me")
-    .then(function (r) { return r.json(); })
-    .then(function (me) {
-      var methods = me.loginMethods || {};
-      if (methods.google) document.getElementById("googleBtn").hidden = false;
-      if (methods.pin) {
-        form.hidden = false;
-        // The divider only makes sense when both options are on screen.
-        if (methods.google) document.getElementById("divider").hidden = false;
-        emailInput.focus();
-      }
-    })
-    .catch(function () { /* leave the page as-is; the server still gates everything */ });
+  emailInput.focus();
 
   form.addEventListener("submit", function (event) {
     event.preventDefault();
