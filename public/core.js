@@ -6,9 +6,9 @@
    ────────────────────────────────────────────────────────────────────────── */
 const OMP = (() => {
   const state = {
-    shipments: [], summary: null, stages: [], docs: {}, users: [],
+    shipments: [], summary: null, stages: [], docs: {}, users: [], ownerOptions: [],
     selectedId: null, selected: null, timeline: [],
-    filters: { search: '', stage: '', risk: '', cause: '' },
+    filters: { search: '', stage: '', risk: '', cause: '', owner: '' },
     pipelineStage: '',
     view: 'overview',
     user: { name: 'Local Admin', email: 'local@recykal.test', role: 'admin' },
@@ -39,25 +39,44 @@ const OMP = (() => {
     { label: 'Payment', keys: ['paymentAdvice', 'utr'] },
   ];
   const DOC_STATES = [['missing', 'Missing'], ['pending', 'Pending'], ['ok', 'OK'], ['na', 'NA']];
+  // Kept under 10 options deliberately — the manual-sheet audit found the same
+  // "why stuck" idea scattered across many near-duplicate reasons (docs pending
+  // spelled 5 ways, payment pending spelled 3 ways); merged here so counts in
+  // Why-Pending are honest. Old stored codes (e.g. "seller_docs_pending") still
+  // render fine via reasonLabel's title() fallback — no data migration needed.
   const REASONS = [
     ['', 'Select why this is stuck'],
-    ['poc_docs_pending', 'POC has not shared docs'],
+    ['docs_pending', 'Documents pending'],
     ['buyer_approval_pending', 'Buyer approval pending'],
-    ['seller_docs_pending', 'Seller docs pending'],
-    ['vehicle_lr_pending', 'Vehicle images / LR pending'],
-    ['weight_mismatch', 'Weight mismatch'],
-    ['ewaybill_invoice_issue', 'E-way bill / invoice issue'],
     ['pod_pending', 'POD pending from buyer'],
     ['qc_dn_pending', 'QC / DN pending'],
-    ['payment_pending', 'Payment not released'],
-    ['payment_done_proof_pending', 'Payment done, proof / UTR pending'],
-    ['payment_done_upload_pending', 'Payment done, buyer/seller not uploaded in system'],
-    ['docs_offline_upload_pending', 'Docs available, upload to system pending'],
+    ['payment_pending', 'Payment pending / proof pending'],
     ['poc_not_responding', 'POC not responding'],
     ['internal_verification', 'Internal verification pending'],
     ['other', 'Other'],
   ];
-  const reasonLabel = code => (REASONS.find(r => r[0] === code) || [null, code])[1];
+  // Separate, contextual set — only shown when the target stage is "rejected".
+  const REJECTION_REASONS = [
+    ['', 'Select rejection reason'],
+    ['rejected_quality', 'Rejected — quality issue'],
+    ['rejected_price_dispute', 'Rejected — price dispute'],
+    ['rejected_buyer_cancel', 'Rejected — buyer cancelled'],
+    ['rejected_documentation', 'Rejected — documentation issue'],
+    ['rejected_other', 'Rejected — other'],
+  ];
+  const ALL_REASONS = [...REASONS, ...REJECTION_REASONS.slice(1)];
+  const reasonLabel = code => (ALL_REASONS.find(r => r[0] === code) || [null, code])[1];
+
+  const ISSUE_TYPES = [
+    ['', 'Select issue type'],
+    ['gst_pending', 'GST pending'],
+    ['payment_advice_pending', 'Payment advice pending'],
+    ['po_pending', 'PO pending'],
+    ['tracking_issue', 'Tracking issue'],
+    ['buyer_detail_issue', 'Buyer detail issue'],
+    ['other', 'Other'],
+  ];
+  const issueTypeLabel = code => (ISSUE_TYPES.find(r => r[0] === code) || [null, code])[1];
 
   /* stage identity — emoji pin + soft pastel tint per stage (Goa-DRS-style flow) */
   const STAGE_META = {
@@ -72,6 +91,9 @@ const OMP = (() => {
   const CAUSE_LABELS = {
     owner_missing: 'Owner not assigned', docs_pending: 'Documents pending',
     payment_overdue: 'Payment overdue', payment_pending: 'Payment pending',
+    issue_gst_pending: 'Issue — GST pending', issue_payment_advice_pending: 'Issue — payment advice pending',
+    issue_po_pending: 'Issue — PO pending', issue_tracking_issue: 'Issue — tracking',
+    issue_buyer_detail_issue: 'Issue — buyer detail', issue_other: 'Issue — other',
     payment_done_upload_pending: 'Paid · not uploaded in system', qc_dn_pending: 'QC / DN pending',
     followup_due: 'Follow-up due', in_progress: 'In progress (on track)',
   };
@@ -159,6 +181,11 @@ const OMP = (() => {
   function eventHtml(e) {
     let main = e.type === 'doc' ? `${esc(state.docs[e.key] || e.key)} → ${esc(title(e.value))}` : `${esc(title(e.type))} → ${esc(e.value)}`;
     if (e.type === 'followup') main = e.status === 'done' ? 'Follow-up done' : `Follow-up set → ${esc(e.dueDate)}`;
+    if (e.type === 'qty') main = `${esc(title(e.key))} → ${esc(e.value)} kg`;
+    if (e.type === 'payment_detail') main = `${esc(e.key.toUpperCase())} → ₹${esc(e.value)}`;
+    if (e.type === 'issue') main = `Issue tagged → ${esc(issueTypeLabel(e.value))}`;
+    if (e.type === 'buyer_contact') main = `Buyer contacted`;
+    if (e.type === 'margin') main = `Margin ${e.key === 'invoiceRaised' ? 'invoice raised' : 'invoice sent'} → ${esc(e.value)}`;
     const reason = e.reason ? `<div class="event-reason">▲ ${esc(reasonLabel(e.reason))}</div>` : '';
     return `<div class="event"><div class="event-top"><span>${esc(e.actor || 'User')}</span><span>${new Date(e.createdAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span></div><div class="event-main">${main}</div>${reason}${e.note ? `<div class="event-note">${esc(e.note)}</div>` : ''}</div>`;
   }
@@ -190,7 +217,7 @@ const OMP = (() => {
   }
   async function loadBootstrap(email) {
     const d = await api('/api/bootstrap?user=' + encodeURIComponent(email || state.user.email));
-    Object.assign(state, { shipments: d.shipments, summary: d.summary, stages: d.stages, docs: d.docs, users: d.users || [], user: d.user || state.user });
+    Object.assign(state, { shipments: d.shipments, summary: d.summary, stages: d.stages, docs: d.docs, users: d.users || [], ownerOptions: d.ownerOptions || [], user: d.user || state.user });
     localStorage.setItem('ompUser', state.user.email);
   }
   async function selectShipment(id, rerender = true) {
@@ -282,7 +309,7 @@ const OMP = (() => {
 
   return {
     state, pages, registerPage,
-    helpers: { esc, title, today, num, money, shortMoney, DOC_GROUPS, DOC_STATES, REASONS, reasonLabel, STAGE_META, CAUSE_LABELS, causeLabel, isDue, needs, score, ranked, filtered, myShipments, isScoped, actionReason, payMini, docChip, reasonChip, proofChip, stagePill, paymentPill, eventHtml, stageHelp, funnelFlow, stageCounts, avg },
+    helpers: { esc, title, today, num, money, shortMoney, DOC_GROUPS, DOC_STATES, REASONS, REJECTION_REASONS, ISSUE_TYPES, issueTypeLabel, reasonLabel, STAGE_META, CAUSE_LABELS, causeLabel, isDue, needs, score, ranked, filtered, myShipments, isScoped, actionReason, payMini, docChip, reasonChip, proofChip, stagePill, paymentPill, eventHtml, stageHelp, funnelFlow, stageCounts, avg },
     actions: { api, loadBootstrap, selectShipment, postUpdate, toast, setView, openInCrm, renderActive, renderAll },
     boot,
   };

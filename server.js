@@ -236,12 +236,18 @@ async function computeState() {
     for (const event of events) {
       if (event.type === "stage") {
         merged.funnel = event.value;
+        merged.stageEnteredAt = event.createdAt;
         if (event.value === "completed" || event.value === "rejected") merged.blockReason = "";
+        if (event.value === "rejected" && event.reason) merged.rejectionReason = event.reason;
+        if (event.reason) merged.blockReason = event.reason;
       }
       if (event.type === "doc") merged.docs[event.key] = event.value;
       if (event.type === "note") merged.remarks = event.value;
       if (event.type === "owner") merged.controlPoc = event.value;
-      if (event.reason) merged.blockReason = event.reason;
+      if (event.type === "qty" && event.key === "invoiceQty") merged.invoiceQty = event.value;
+      if (event.type === "qty" && event.key === "receivedQty") merged.receivedQty = event.value;
+      if (event.type === "payment_detail" && event.key === "tds") merged.tds = event.value;
+      if (event.type === "issue") merged.issueType = event.value;
     }
     const docs = {
       buyerPO: normalizeDoc(merged.docs.buyerPO),
@@ -281,12 +287,20 @@ async function computeState() {
       };
     })();
     const dispatchAge = daysSince(merged.dispatchDate);
-    const stageAge = dispatchAge;
+    const stageAge = daysSince(merged.stageEnteredAt || merged.dispatchDate);
+    const invoiceQty = toNumber(merged.invoiceQty || merged.qtyKg);
+    const receivedQty = merged.receivedQty !== undefined ? toNumber(merged.receivedQty) : null;
+    const shortageQty = receivedQty !== null ? Math.max(0, invoiceQty - receivedQty) : null;
+    const shortageStatus =
+      shortageQty === null ? "not_received"
+      : shortageQty <= 0 ? "clear"
+      : shortageQty / (invoiceQty || 1) > 0.02 ? "shortage"
+      : "minor_variance";
     const owner = String(merged.controlPoc || merged.srPoc || merged.brPoc || "Unassigned").trim();
     const pr = paymentRisk(merged, paymentStatus);
     const todayStr = new Date().toISOString().slice(0, 10);
     const dueSoon = !!(latestFollowUp && latestFollowUp.dueDate && latestFollowUp.dueDate <= todayStr);
-    const cause = deriveCause({ funnel: merged.funnel, blockReason: merged.blockReason, controlPoc: merged.controlPoc, paidProofPending, paymentRisk: pr, missingDocs, dueSoon });
+    const cause = deriveCause({ funnel: merged.funnel, blockReason: merged.blockReason, issueType: merged.issueType, controlPoc: merged.controlPoc, paidProofPending, paymentRisk: pr, missingDocs, dueSoon });
     return {
       ...merged,
       docs,
@@ -298,10 +312,17 @@ async function computeState() {
       paymentDerived: paymentStatus,
       paidProofPending,
       blockReason: merged.blockReason || "",
+      rejectionReason: merged.rejectionReason || "",
       cause,
       paymentRisk: pr,
       dispatchAge,
       stageAge,
+      invoiceQty,
+      receivedQty,
+      shortageQty,
+      shortageStatus,
+      tds: merged.tds !== undefined ? toNumber(merged.tds) : null,
+      issueType: merged.issueType || "",
       timelineCount: events.length,
       followUp: latestFollowUp,
       route: deriveRoute(merged),
@@ -315,6 +336,7 @@ async function computeState() {
 function deriveCause(o) {
   if (o.funnel === "completed" || o.funnel === "rejected") return null;
   if (o.blockReason) return o.blockReason;
+  if (o.issueType) return "issue_" + o.issueType;
   if (!o.controlPoc) return "owner_missing";
   if (o.paidProofPending) return "payment_done_upload_pending";
   if (o.paymentRisk === "overdue") return "payment_overdue";
@@ -731,8 +753,11 @@ function securityHeaders() {
 }
 
 // Allowlists + length limits for update events (never trust client shape).
-const UPDATE_TYPES = new Set(["stage", "doc", "note", "owner", "followup"]);
+const UPDATE_TYPES = new Set(["stage", "doc", "note", "owner", "followup", "qty", "payment_detail", "issue"]);
 const DOC_VALUES = new Set(["missing", "pending", "ok", "na"]);
+const QTY_KEYS = new Set(["invoiceQty", "receivedQty"]);
+const PAYMENT_DETAIL_KEYS = new Set(["tds"]);
+const ISSUE_TYPES = new Set(["gst_pending", "payment_advice_pending", "po_pending", "tracking_issue", "buyer_detail_issue", "other"]);
 const clampStr = (v, n) => String(v === null || v === undefined ? "" : v).slice(0, n);
 function validateUpdate(p) {
   const type = String(p.type || "note");
@@ -746,7 +771,8 @@ function validateUpdate(p) {
     if (!DOC_VALUES.has(p.value)) return { error: "invalid doc value" };
     out.key = p.key; out.value = p.value;
   } else if (type === "owner") {
-    out.value = clampStr(p.value, 120);
+    const normalized = splitNames(p.value).map(canonicalName).join("/");
+    out.value = clampStr(normalized, 120);
   } else if (type === "note") {
     out.value = clampStr(p.value, 1000);
   } else if (type === "followup") {
@@ -754,6 +780,19 @@ function validateUpdate(p) {
     out.status = ["open", "done"].includes(p.status) ? p.status : "open";
     out.dueDate = /^\d{4}-\d{2}-\d{2}$/.test(String(p.dueDate || "")) ? p.dueDate : "";
     out.reason = clampStr(p.reason, 60);
+  } else if (type === "qty") {
+    if (!QTY_KEYS.has(p.key)) return { error: "invalid qty key" };
+    const n = Number(String(p.value ?? "").replace(/[,\s]/g, ""));
+    if (!Number.isFinite(n) || n < 0) return { error: "invalid qty value" };
+    out.key = p.key; out.value = String(n);
+  } else if (type === "payment_detail") {
+    if (!PAYMENT_DETAIL_KEYS.has(p.key)) return { error: "invalid payment_detail key" };
+    const n = Number(String(p.value ?? "").replace(/[,\s]/g, ""));
+    if (!Number.isFinite(n) || n < 0) return { error: "invalid payment_detail value" };
+    out.key = p.key; out.value = String(n);
+  } else if (type === "issue") {
+    if (!ISSUE_TYPES.has(p.value)) return { error: "invalid issue type" };
+    out.value = p.value;
   }
   return { value: out };
 }
@@ -897,6 +936,7 @@ async function handleApi(req, res, url) {
       docs: DOC_LABELS,
       user,
       users: (authGateOn() && user.role !== "admin") ? [] : users,
+      ownerOptions: [...new Set(users.map((u) => u.name).filter(Boolean))],
     });
   }
   if (req.method === "GET" && url.pathname.startsWith("/api/shipments/")) {

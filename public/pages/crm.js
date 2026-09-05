@@ -103,6 +103,7 @@ OMP.registerPage('crm', {
         </div>
         <div class="crm-grid">
           ${paymentBox(s)}
+          ${qtyBox(s)}
           <div class="section-box">
             <div class="section-title"><h3>Update Stage &amp; Reason</h3><span class="badge ${r.kind}">${r.short}</span></div>
             <div class="section-body">
@@ -113,9 +114,14 @@ OMP.registerPage('crm', {
               <select id="stageReason">${H.REASONS.map(([v, l]) => `<option value="${v}" ${v === (s.blockReason || '') ? 'selected' : ''}>${l}</option>`).join('')}</select>
               <textarea id="stageNote" placeholder="Remarks — what happened, next step"></textarea>
               <div class="form-row">
-                <input id="ownerUpdate" type="text" value="${esc(s.controlPoc || '')}" placeholder="Owner / Control POC" />
+                <select id="issueType"><option value="">— why stuck (issue tag) —</option>${H.ISSUE_TYPES.filter(([v])=>v).map(([v, l]) => `<option value="${v}" ${v === (s.issueType || '') ? 'selected' : ''}>${l}</option>`).join('')}</select>
+                <button class="secondary-btn" id="saveIssue">Tag issue</button>
+              </div>
+              <div class="form-row">
+                <input id="ownerUpdate" type="text" value="${esc(s.controlPoc || '')}" placeholder="Owner / Control POC" list="ownerOptionsList" />
                 <button class="secondary-btn" id="saveOwner">Set owner</button>
               </div>
+              <datalist id="ownerOptionsList">${(state.ownerOptions||[]).map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
             </div>
           </div>
           <div class="section-box">
@@ -139,7 +145,19 @@ OMP.registerPage('crm', {
       // edit bindings — only when the signed-in associate owns this shipment
       if (!ro) {
         main.querySelector('#saveStage').onclick = () => A.postUpdate({ type: 'stage', value: main.querySelector('#stageUpdate').value, reason: main.querySelector('#stageReason').value, note: main.querySelector('#stageNote').value });
+        main.querySelector('#stageUpdate').onchange = e => {
+          const reasonSel = main.querySelector('#stageReason');
+          const list = e.target.value === 'rejected' ? H.REJECTION_REASONS : H.REASONS;
+          reasonSel.innerHTML = list.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+        };
         main.querySelector('#saveOwner').onclick = () => { const v = main.querySelector('#ownerUpdate').value.trim(); if (v) A.postUpdate({ type: 'owner', value: v, note: 'Owner updated' }); };
+        main.querySelector('#saveIssue').onclick = () => { const v = main.querySelector('#issueType').value; if (v) A.postUpdate({ type: 'issue', value: v, note: 'Issue tagged' }); };
+        main.querySelector('#saveQty').onclick = () => {
+          const inv = main.querySelector('#invoiceQtyInput').value, rec = main.querySelector('#receivedQtyInput').value;
+          if (inv) A.postUpdate({ type: 'qty', key: 'invoiceQty', value: inv, note: 'Invoice qty updated' });
+          if (rec) A.postUpdate({ type: 'qty', key: 'receivedQty', value: rec, note: 'Received qty updated' });
+        };
+        main.querySelector('#saveTds').onclick = () => { const v = main.querySelector('#tdsInput').value; if (v) A.postUpdate({ type: 'payment_detail', key: 'tds', value: v, note: 'TDS updated' }); };
         main.querySelector('#saveNote').onclick = () => { const v = main.querySelector('#genNote').value.trim(); if (v) A.postUpdate({ type: 'note', value: v, note: 'Remark' }); };
         main.querySelector('#saveFu').onclick = () => A.postUpdate({ type: 'followup', value: 'scheduled', dueDate: main.querySelector('#fuDate').value, note: main.querySelector('#fuNote').value, status: 'open' });
         main.querySelector('#fuDone').onclick = () => A.postUpdate({ type: 'followup', value: 'done', dueDate: H.today(), note: main.querySelector('#fuNote').value || 'Follow-up completed', status: 'done' });
@@ -180,6 +198,26 @@ OMP.registerPage('crm', {
           </div>
           ${H.payMini(s, true)}
           ${s.paidProofPending ? '<p class="docv-note" style="color:var(--bad)">Paid but UTR / payment advice not uploaded in system.</p>' : ''}
+          <div class="pay-grid" style="margin-top:8px;border-top:1px dashed var(--line-soft);padding-top:8px">
+            ${pcell('GST', H.shortMoney(s.gst))}
+            ${pcell('Debit Note', H.shortMoney(s.debitNote))}
+          </div>
+          <div class="form-row" style="margin-top:6px">
+            <input id="tdsInput" type="number" step="0.01" value="${s.tds != null ? s.tds : ''}" placeholder="TDS amount (₹)" />
+            <button class="secondary-btn" id="saveTds">Save TDS</button>
+          </div>
+        </div>
+      </div>`;
+    }
+
+    function qtyBox(s) {
+      const shortageFlag = s.shortageStatus === 'clear' ? 'ok' : s.shortageStatus === 'minor_variance' ? 'warn' : s.shortageStatus === 'shortage' ? 'bad' : 'neutral';
+      return `<div class="section-box">
+        <div class="section-title"><h3>Quantity</h3><span class="badge ${shortageFlag}">${esc(H.title ? H.title(s.shortageStatus || '') : (s.shortageStatus || ''))}</span></div>
+        <div class="section-body">
+          <div class="form-row"><input id="invoiceQtyInput" type="number" value="${s.invoiceQty || ''}" placeholder="Invoice qty (kg)" /></div>
+          <div class="form-row"><input id="receivedQtyInput" type="number" value="${s.receivedQty || ''}" placeholder="Received qty (kg)" /><button class="secondary-btn" id="saveQty">Save qty</button></div>
+          ${s.shortageQty != null ? `<p class="sub">Shortage: ${s.shortageQty} kg</p>` : ''}
         </div>
       </div>`;
     }
