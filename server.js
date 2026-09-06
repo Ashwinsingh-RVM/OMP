@@ -471,6 +471,19 @@ function buildSummary(shipments) {
   };
 }
 
+// New shipment IDs: SH + YYMMDD + a 2-digit daily sequence, guaranteed unique
+// against whatever's already in the book (existing legacy IDs follow their own
+// scheme from the source sheet — this only has to not collide with them).
+function generateShipmentId(existingIds) {
+  const now = new Date();
+  const stamp = `${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+  for (let seq = 1; seq <= 99; seq++) {
+    const id = `SH${stamp}${String(seq).padStart(2, "0")}`;
+    if (!existingIds.has(id)) return id;
+  }
+  return `SH${stamp}${Date.now() % 1000}`;
+}
+
 function splitNames(value) {
   return String(value || "")
     .split(/[,&/]|\band\b/i)
@@ -1041,6 +1054,43 @@ async function handleApi(req, res, url) {
     await store.addUpdate(event);
     invalidateState(); // writer must observe its own change on the next read
     return sendJson(res, { ok: true, event });
+  }
+  if (req.method === "POST" && url.pathname === "/api/shipments") {
+    // New-shipment intake: only the shipment ID is generated — every other field
+    // (buyer, seller, material, qty, POCs...) is entered manually against it from
+    // here, same as every existing shipment in the book.
+    if (user.role === "guest") return sendJson(res, { error: "Not authorized" }, 403);
+    let payload;
+    try {
+      payload = await readBody(req);
+    } catch (e) {
+      return sendJson(res, { error: "Invalid request" }, 400);
+    }
+    const buyer = clampStr(payload.buyer, 200);
+    if (!buyer) return sendJson(res, { error: "Buyer is required" }, 400);
+    const existingIds = new Set(state.shipments.map((s) => s.shipmentId));
+    const shipmentId = generateShipmentId(existingIds);
+    const row = {
+      shipmentId,
+      orderId: "",
+      vertical: clampStr(payload.vertical, 60),
+      material: clampStr(payload.material, 200),
+      seller: clampStr(payload.seller, 200),
+      srPoc: clampStr(payload.srPoc, 100),
+      buyer,
+      brPoc: clampStr(payload.brPoc, 100),
+      controlPoc: clampStr(payload.controlPoc, 100),
+      month: new Date().toLocaleString("en-IN", { month: "long" }),
+      invoiceNo: "", invoiceDate: "", dispatchDate: "", dueDate: "", paymentTerms: "", distance: "",
+      stageRaw: "MM", funnel: "mm",
+      qtyKg: clampStr(payload.qtyKg, 20),
+      materialValue: clampStr(payload.materialValue, 20),
+      gst: "0", total: "0", debitNote: "0", netPayable: "0", paidAmount: "0", balance: "0",
+      paymentStatus: "", docs: {}, remarks: "",
+    };
+    await store.addShipment(row);
+    invalidateState();
+    return sendJson(res, { ok: true, shipmentId });
   }
   return sendJson(res, { error: "Not found" }, 404);
 }

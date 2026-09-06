@@ -18,7 +18,21 @@ OMP.registerPage('crm', {
     el.innerHTML = `
       <div class="crm-layout">
         <aside class="card crm-list">
-          <div class="card-head"><div><h2>Shipments</h2><p id="crmCount">0 records</p></div></div>
+          <div class="card-head"><div><h2>Shipments</h2><p id="crmCount">0 records</p></div><button class="primary-btn" id="newShipmentBtn">+ New</button></div>
+          <div class="section-box collapsed" id="newShipmentBox" style="margin:10px;border-radius:var(--r-sm)">
+            <div class="section-title"><h3>New Shipment</h3><span class="badge neutral">only Shipment ID is auto</span></div>
+            <div class="section-body">
+              <p class="sub" style="margin:-2px 0 2px">Everything below is entered manually — same as any existing shipment.</p>
+              <input id="nsBuyer" type="text" placeholder="Buyer (required)" />
+              <input id="nsSeller" type="text" placeholder="Seller" />
+              <input id="nsMaterial" type="text" placeholder="Material" />
+              <div class="form-row"><input id="nsQty" type="number" placeholder="Qty (kg)" /><input id="nsValue" type="number" placeholder="Material value (₹)" /></div>
+              <input id="nsControlPoc" type="text" placeholder="Owner / Control POC" list="ownerOptionsListNew" />
+              <datalist id="ownerOptionsListNew">${(state.ownerOptions||[]).map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
+              <button class="primary-btn" id="nsCreate">Create shipment</button>
+              <p class="sub" id="nsError" style="color:var(--bad);display:none"></p>
+            </div>
+          </div>
           <div class="filters">
             <input id="crmSearch" type="search" placeholder="Search shipment, buyer, seller, POC" />
             <div class="filter-row">
@@ -38,6 +52,34 @@ OMP.registerPage('crm', {
         </aside>
         <section class="card" id="crmMain"></section>
       </div>`;
+
+    // New Shipment — only the ID is auto-generated, everything else is typed in here
+    el.querySelector('#newShipmentBtn').onclick = () => el.querySelector('#newShipmentBox').classList.toggle('collapsed');
+    el.querySelector('#nsCreate').onclick = async () => {
+      const errEl = el.querySelector('#nsError');
+      errEl.style.display = 'none';
+      const buyer = el.querySelector('#nsBuyer').value.trim();
+      if (!buyer) { errEl.textContent = 'Buyer is required.'; errEl.style.display = 'block'; return; }
+      try {
+        const res = await A.api('/api/shipments', {
+          method: 'POST',
+          body: JSON.stringify({
+            buyer,
+            seller: el.querySelector('#nsSeller').value.trim(),
+            material: el.querySelector('#nsMaterial').value.trim(),
+            qtyKg: el.querySelector('#nsQty').value,
+            materialValue: el.querySelector('#nsValue').value,
+            controlPoc: el.querySelector('#nsControlPoc').value.trim(),
+          }),
+        });
+        await A.loadBootstrap(state.user.email);
+        await A.selectShipment(res.shipmentId, false);
+        A.renderActive();
+        A.toast(`Created ${res.shipmentId}`);
+      } catch (e) {
+        errEl.textContent = 'Could not create shipment — try again.'; errEl.style.display = 'block';
+      }
+    };
 
     // filters
     const stageSel = el.querySelector('#crmStage');

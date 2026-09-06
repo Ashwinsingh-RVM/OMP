@@ -56,6 +56,16 @@ function createJsonStore() {
       current.updates.push(event);
       writeJson(UPDATES_FILE, current);
     },
+    // New-shipment intake: only ever appends a brand-new row, by shipmentId — never
+    // overwrites an existing one (all further change to an existing shipment is
+    // event-sourced via addUpdate, not this).
+    async addShipment(row) {
+      const current = readJson(SHIPMENTS_FILE, { shipments: [] });
+      current.shipments = current.shipments || [];
+      if (current.shipments.some((r) => r.shipmentId === row.shipmentId)) return;
+      current.shipments.push(row);
+      writeJson(SHIPMENTS_FILE, current);
+    },
     async getPin(email) {
       const pins = readJson(PINS_FILE, { pins: {} }).pins || {};
       return pins[String(email).toLowerCase()] || null;
@@ -180,6 +190,20 @@ function createPgStore() {
           event.reason || "",
           event.createdAt,
         ]
+      );
+    },
+    async addShipment(row) {
+      await ensureReady();
+      await pool.query(
+        `INSERT INTO shipments
+           (shipment_id, order_id, vertical, material, seller, sr_poc, buyer,
+            br_poc, control_poc, funnel, stage_raw, dispatch_date, due_date, docs, raw)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+         ON CONFLICT (shipment_id) DO NOTHING`,
+        [row.shipmentId, row.orderId || null, row.vertical || null, row.material || null,
+         row.seller || null, row.srPoc || null, row.buyer || null, row.brPoc || null,
+         row.controlPoc || null, row.funnel || null, row.stageRaw || null,
+         row.dispatchDate || null, row.dueDate || null, JSON.stringify(row.docs || {}), JSON.stringify(row)]
       );
     },
     async getPin(email) {
