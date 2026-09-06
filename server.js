@@ -566,6 +566,28 @@ function buildUsers(shipments) {
   return users.sort((a, b) => (a.role === "admin" ? -1 : b.role === "admin" ? 1 : a.name.localeCompare(b.name)));
 }
 
+// Balanced auto-assign for a new shipment with no owner typed in: whoever
+// currently has the fewest OPEN shipments gets it. Not buyer-based — deliberately,
+// so no single associate gets buried just because they handle one heavy buyer.
+// Admins are never assignment targets. Ties break alphabetically for determinism.
+function pickLeastLoadedOwner(shipments, users) {
+  const candidates = users.filter((u) => u.role !== "admin");
+  if (!candidates.length) return "";
+  const openCount = new Map(candidates.map((u) => [nameKey(u.name), 0]));
+  for (const s of shipments) {
+    if (s.funnel === "completed" || s.funnel === "rejected") continue;
+    for (const raw of splitNames(s.controlPoc)) {
+      const key = nameKey(raw);
+      if (openCount.has(key)) openCount.set(key, openCount.get(key) + 1);
+    }
+  }
+  let best = candidates[0];
+  for (const u of candidates) {
+    if (openCount.get(nameKey(u.name)) < openCount.get(nameKey(best.name))) best = u;
+  }
+  return best.name;
+}
+
 function authUserMap() {
   // Optional mapping of real Google emails to an internal user email/POC scope.
   // e.g. AUTH_USERS='{"ashwin.singh@recykal.com":"aishwarya@local.associate"}'
@@ -1069,7 +1091,13 @@ async function handleApi(req, res, url) {
     const buyer = clampStr(payload.buyer, 200);
     if (!buyer) return sendJson(res, { error: "Buyer is required" }, 400);
     const existingIds = new Set(state.shipments.map((s) => s.shipmentId));
-    const shipmentId = generateShipmentId(existingIds);
+    const manualId = clampStr(payload.shipmentId, 30).trim();
+    if (manualId && existingIds.has(manualId)) return sendJson(res, { error: "That Shipment ID already exists" }, 400);
+    const shipmentId = manualId || generateShipmentId(existingIds);
+    const controlPocIn = clampStr(payload.controlPoc, 100).trim();
+    // Owner left blank → auto-assign to whoever has the lightest open load right
+    // now (same balanced logic as the plan's auto-assign — not buyer-based).
+    const controlPoc = controlPocIn || pickLeastLoadedOwner(state.shipments, users);
     const row = {
       shipmentId,
       orderId: "",
@@ -1079,7 +1107,7 @@ async function handleApi(req, res, url) {
       srPoc: clampStr(payload.srPoc, 100),
       buyer,
       brPoc: clampStr(payload.brPoc, 100),
-      controlPoc: clampStr(payload.controlPoc, 100),
+      controlPoc,
       month: new Date().toLocaleString("en-IN", { month: "long" }),
       invoiceNo: "", invoiceDate: "", dispatchDate: "", dueDate: "", paymentTerms: "", distance: "",
       stageRaw: "MM", funnel: "mm",
@@ -1090,7 +1118,7 @@ async function handleApi(req, res, url) {
     };
     await store.addShipment(row);
     invalidateState();
-    return sendJson(res, { ok: true, shipmentId });
+    return sendJson(res, { ok: true, shipmentId, controlPoc, autoAssigned: !controlPocIn });
   }
   return sendJson(res, { error: "Not found" }, 404);
 }

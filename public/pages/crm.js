@@ -23,6 +23,7 @@ OMP.registerPage('crm', {
             <div class="section-title"><h3>New Shipment</h3><span class="badge neutral">only Shipment ID is auto</span></div>
             <div class="section-body">
               <p class="sub" style="margin:-2px 0 2px">Everything below is entered manually — same as any existing shipment.</p>
+              <input id="nsShipmentId" type="text" placeholder="Shipment ID — leave blank to auto-generate" />
               <input id="nsBuyer" type="text" placeholder="Buyer (required)" />
               <input id="nsSeller" type="text" placeholder="Seller" />
               <input id="nsMaterial" type="text" placeholder="Material" />
@@ -64,6 +65,7 @@ OMP.registerPage('crm', {
         const res = await A.api('/api/shipments', {
           method: 'POST',
           body: JSON.stringify({
+            shipmentId: el.querySelector('#nsShipmentId').value.trim(),
             buyer,
             seller: el.querySelector('#nsSeller').value.trim(),
             material: el.querySelector('#nsMaterial').value.trim(),
@@ -75,7 +77,7 @@ OMP.registerPage('crm', {
         await A.loadBootstrap(state.user.email);
         await A.selectShipment(res.shipmentId, false);
         A.renderActive();
-        A.toast(`Created ${res.shipmentId}`);
+        A.toast(res.autoAssigned ? `Created ${res.shipmentId} — auto-assigned to ${res.controlPoc}` : `Created ${res.shipmentId}`);
       } catch (e) {
         errEl.textContent = 'Could not create shipment — try again.'; errEl.style.display = 'block';
       }
