@@ -34,9 +34,12 @@
     <button class="view-tab" data-view="work">My Work</button>
     <button class="view-tab" data-view="crm">Shipment CRM</button>
     <button class="view-tab" data-view="pipeline">Pipeline</button>
-    <button class="view-tab" data-view="insights">Why Pending</button>
-    <button class="view-tab" data-view="trends">Trends</button>
-    <button class="view-tab" data-view="aging">Stage Aging</button>
+    <button class="view-tab" data-view="insights" data-admin="1">Why Pending</button>
+    <button class="view-tab" data-view="trends" data-admin="1">Trends</button>
+    <button class="view-tab" data-view="aging" data-admin="1">Stage Aging</button>
+    <button class="view-tab" data-view="pipehealth" data-admin="1">Pipeline Health</button>
+    <button class="view-tab" data-view="owners" data-admin="1">Owner Performance</button>
+    <button class="view-tab" data-view="finance" data-admin="1">Finance</button>
   </nav>
 
   <main class="page">
@@ -47,6 +50,9 @@
     <section class="page-view" id="view-insights"></section>
     <section class="page-view" id="view-trends"></section>
     <section class="page-view" id="view-aging"></section>
+    <section class="page-view" id="view-pipehealth"></section>
+    <section class="page-view" id="view-owners"></section>
+    <section class="page-view" id="view-finance"></section>
   </main>
 
   <div class="toast-wrap" id="toastWrap"></div>
@@ -60,6 +66,9 @@
   <script src="/pages/insights.js"></script>
   <script src="/pages/trends.js"></script>
   <script src="/pages/aging.js"></script>
+  <script src="/pages/pipehealth.js"></script>
+  <script src="/pages/owners.js"></script>
+  <script src="/pages/finance.js"></script>
   <script src="/boot.js"></script>
 </body>
 </html>

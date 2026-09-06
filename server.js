@@ -228,6 +228,22 @@ async function computeState() {
     list.push(event);
     updateMap.set(event.shipmentId, list);
   }
+  // Cross-shipment POC contact log — so a different shipment for the same buyer/seller POC
+  // shows the last time anyone contacted them, regardless of which shipment logged it.
+  const rowById = new Map((source.shipments || []).map((r) => [r.shipmentId, r]));
+  const pocContactMap = { buyer: new Map(), seller: new Map() };
+  for (const event of updates.updates || []) {
+    if (event.type !== "poc_contact") continue;
+    const row = rowById.get(event.shipmentId);
+    if (!row) continue;
+    const side = event.key === "seller" ? "seller" : "buyer";
+    const pocName = side === "seller" ? row.srPoc : row.brPoc;
+    if (!pocName) continue;
+    const key = nameKey(pocName);
+    const list = pocContactMap[side].get(key) || [];
+    list.push({ note: event.note || event.value, actor: event.actor, createdAt: event.createdAt, shipmentId: event.shipmentId });
+    pocContactMap[side].set(key, list);
+  }
   const shipments = (source.shipments || []).map((row) => {
     const events = (updateMap.get(row.shipmentId) || []).sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
     const openFollowUps = events.filter((event) => event.type === "followup" && event.status !== "done" && event.dueDate);
@@ -248,6 +264,10 @@ async function computeState() {
       if (event.type === "qty" && event.key === "receivedQty") merged.receivedQty = event.value;
       if (event.type === "payment_detail" && event.key === "tds") merged.tds = event.value;
       if (event.type === "issue") merged.issueType = event.value;
+      if (event.type === "invoice_detail") merged[event.key] = event.value;
+      if (event.type === "margin" && event.key === "applies") merged.marginApplies = event.value;
+      if (event.type === "margin" && event.key === "pctOverride") merged.marginPctOverride = event.value;
+      if (event.type === "margin" && event.key === "invoiceStatus") merged.marginInvoiceStatus = event.value;
     }
     const docs = {
       buyerPO: normalizeDoc(merged.docs.buyerPO),
@@ -296,7 +316,17 @@ async function computeState() {
       : shortageQty <= 0 ? "clear"
       : shortageQty / (invoiceQty || 1) > 0.02 ? "shortage"
       : "minor_variance";
-    const owner = String(merged.controlPoc || merged.srPoc || merged.brPoc || "Unassigned").trim();
+    // Owner is controlPoc only — srPoc/brPoc are the buyer's/seller's own external contacts,
+    // never our internal txn team, never a fallback "owner".
+    const owner = String(merged.controlPoc || "Unassigned").trim();
+    // Supplier margin: shipment-level override > standard 0.5% default. "No" locks it to 0.
+    const marginApplies = merged.marginApplies || "pending";
+    const marginPct = marginApplies === "no" ? 0 : toNumber(merged.marginPctOverride) || 0.5;
+    const marginAmount = toNumber(merged.materialValue) * marginPct / 100;
+    const buyerLog = (row.brPoc && pocContactMap.buyer.get(nameKey(row.brPoc))) || [];
+    const sellerLog = (row.srPoc && pocContactMap.seller.get(nameKey(row.srPoc))) || [];
+    const lastBuyerPocContact = buyerLog.length ? buyerLog[buyerLog.length - 1] : null;
+    const lastSellerPocContact = sellerLog.length ? sellerLog[sellerLog.length - 1] : null;
     const pr = paymentRisk(merged, paymentStatus);
     const todayStr = new Date().toISOString().slice(0, 10);
     const dueSoon = !!(latestFollowUp && latestFollowUp.dueDate && latestFollowUp.dueDate <= todayStr);
@@ -325,6 +355,12 @@ async function computeState() {
       issueType: merged.issueType || "",
       timelineCount: events.length,
       followUp: latestFollowUp,
+      marginApplies,
+      marginPct,
+      marginAmount,
+      marginInvoiceStatus: merged.marginInvoiceStatus || "not_raised",
+      lastBuyerPocContact,
+      lastSellerPocContact,
       route: deriveRoute(merged),
     };
   });
@@ -498,11 +534,13 @@ function makeEmail(name) {
   return nameKey(name).replace(/[^a-z0-9]+/g, ".").replace(/^\.|\.$/g, "") + "@local.associate";
 }
 
+// Only controlPoc (our internal txn-team executives) can be app users. srPoc/brPoc are
+// the buyer's and seller's own external contacts — never our agents, never a sign-in identity.
 function buildUsers(shipments) {
   const users = [{ name: "Local Admin", email: "local@recykal.test", role: "admin", scope: "all" }];
   const seen = new Set(users.map((u) => u.email));
   for (const s of shipments) {
-    for (const raw of [...splitNames(s.controlPoc), ...splitNames(s.srPoc), ...splitNames(s.brPoc)]) {
+    for (const raw of splitNames(s.controlPoc)) {
       if (!raw) continue;
       // Display the canonical name so a person appears once, under one spelling.
       const name = canonicalName(raw);
@@ -703,8 +741,9 @@ function resolveUser(req, url, shipments) {
   return { name: "Guest", email: "guest", role: "guest", scope: "none" };
 }
 
+// Ownership/edit-scope is controlPoc only — same reasoning as buildUsers() above.
 function shipmentNames(shipment) {
-  return [...splitNames(shipment.controlPoc), ...splitNames(shipment.srPoc), ...splitNames(shipment.brPoc)].map(nameKey);
+  return splitNames(shipment.controlPoc).map(nameKey);
 }
 
 function scopeShipments(shipments, user) {
@@ -753,11 +792,16 @@ function securityHeaders() {
 }
 
 // Allowlists + length limits for update events (never trust client shape).
-const UPDATE_TYPES = new Set(["stage", "doc", "note", "owner", "followup", "qty", "payment_detail", "issue"]);
+const UPDATE_TYPES = new Set(["stage", "doc", "note", "owner", "followup", "qty", "payment_detail", "issue", "invoice_detail", "margin", "poc_contact"]);
 const DOC_VALUES = new Set(["missing", "pending", "ok", "na"]);
 const QTY_KEYS = new Set(["invoiceQty", "receivedQty"]);
 const PAYMENT_DETAIL_KEYS = new Set(["tds"]);
+const INVOICE_DETAIL_KEYS = new Set(["invoiceDate", "paymentTerms", "dueDate"]);
 const ISSUE_TYPES = new Set(["gst_pending", "payment_advice_pending", "po_pending", "tracking_issue", "buyer_detail_issue", "other"]);
+const MARGIN_KEYS = new Set(["applies", "pctOverride", "invoiceStatus"]);
+const MARGIN_APPLIES_VALUES = new Set(["pending", "yes", "no"]);
+const MARGIN_INVOICE_STATUS_VALUES = new Set(["not_raised", "raised", "sent"]);
+const POC_CONTACT_KEYS = new Set(["buyer", "seller"]);
 const clampStr = (v, n) => String(v === null || v === undefined ? "" : v).slice(0, n);
 function validateUpdate(p) {
   const type = String(p.type || "note");
@@ -793,6 +837,29 @@ function validateUpdate(p) {
   } else if (type === "issue") {
     if (!ISSUE_TYPES.has(p.value)) return { error: "invalid issue type" };
     out.value = p.value;
+  } else if (type === "invoice_detail") {
+    if (!INVOICE_DETAIL_KEYS.has(p.key)) return { error: "invalid invoice_detail key" };
+    if (p.key === "paymentTerms") { out.key = p.key; out.value = clampStr(p.value, 30); }
+    else {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(p.value || ""))) return { error: "invalid date" };
+      out.key = p.key; out.value = p.value;
+    }
+  } else if (type === "margin") {
+    if (!MARGIN_KEYS.has(p.key)) return { error: "invalid margin key" };
+    if (p.key === "applies") {
+      if (!MARGIN_APPLIES_VALUES.has(p.value)) return { error: "invalid margin applies value" };
+      out.key = p.key; out.value = p.value;
+    } else if (p.key === "invoiceStatus") {
+      if (!MARGIN_INVOICE_STATUS_VALUES.has(p.value)) return { error: "invalid margin invoice status" };
+      out.key = p.key; out.value = p.value;
+    } else {
+      const n = Number(String(p.value ?? "").replace(/[,\s]/g, ""));
+      if (!Number.isFinite(n) || n < 0 || n > 100) return { error: "invalid margin pct" };
+      out.key = p.key; out.value = String(n);
+    }
+  } else if (type === "poc_contact") {
+    if (!POC_CONTACT_KEYS.has(p.key)) return { error: "invalid poc_contact key" };
+    out.key = p.key; out.value = clampStr(p.value, 300);
   }
   return { value: out };
 }

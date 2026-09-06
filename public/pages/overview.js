@@ -18,11 +18,11 @@ OMP.registerPage('overview', {
     const donePct = rows.length ? Math.round(completed.length / rows.length * 100) : 0;
 
     const kpis = [
-      { tone: 'today', k: 'To clear today', v: due.length, meta: 'follow-ups', note: due.length ? 'Act on each, then log a remark' : 'Nothing due — good' },
-      { tone: 'block', k: 'Blocked', v: blocked.length, meta: 'need action', note: 'Docs, owner, payment, QC/DN' },
-      { tone: 'docs', k: 'Docs verified', v: vpct, unit: '%', meta: `${openDocs.length - openDocs.filter(s => s.missingDocs.length).length}/${openDocs.length} clear`, note: `${openDocs.reduce((a, s) => a + s.missingDocs.length, 0)} docs pending`, bar: vpct },
-      { tone: 'money', k: 'Payment pending', v: H.shortMoney(paySum), meta: `${payShip.length} shipments`, note: proof ? `${proof} paid · proof not uploaded` : 'Balance open in scope' },
-      { tone: 'done', k: 'Completed', v: completed.length, unit: `/${rows.length}`, meta: `${donePct}% cleared`, note: 'Closed in your scope' },
+      { tone: 'today', k: 'To clear today', v: due.length, meta: 'follow-ups', note: due.length ? 'Act on each, then log a remark' : 'Nothing due — good', drillView: 'work' },
+      { tone: 'block', k: 'Blocked', v: blocked.length, meta: 'need action', note: 'Docs, owner, payment, QC/DN', drillRisk: 'needs' },
+      { tone: 'docs', k: 'Docs verified', v: vpct, unit: '%', meta: `${openDocs.length - openDocs.filter(s => s.missingDocs.length).length}/${openDocs.length} clear`, note: `${openDocs.reduce((a, s) => a + s.missingDocs.length, 0)} docs pending`, bar: vpct, drillRisk: 'docs' },
+      { tone: 'money', k: 'Payment pending', v: H.shortMoney(paySum), meta: `${payShip.length} shipments`, note: proof ? `${proof} paid · proof not uploaded` : 'Balance open in scope', drillRisk: 'overdue' },
+      { tone: 'done', k: 'Completed', v: completed.length, unit: `/${rows.length}`, meta: `${donePct}% cleared`, note: 'Closed in your scope', drillStage: 'completed' },
     ];
 
     el.innerHTML = `
@@ -44,14 +44,24 @@ OMP.registerPage('overview', {
         </div>
       </div>`;
 
-    function kpiCard(c) {
-      return `<article class="kpi ${c.tone}">
+    function kpiCard(c, i) {
+      return `<article class="kpi ${c.tone}" data-kpi="${i}" style="cursor:pointer">
         <div class="kpi-head"><span class="kpi-k">${c.k}</span><span class="kpi-meta">${c.meta || ''}</span></div>
         <div class="kpi-v">${c.v}${c.unit ? `<small>${c.unit}</small>` : ''}</div>
         ${c.bar != null ? `<div class="mini-bar"><span style="width:${c.bar}%"></span></div>` : ''}
         <div class="kpi-note">${c.note || ''}</div>
       </article>`;
     }
+
+    // KPI tiles — click to drill into the shipment list, filtered
+    el.querySelectorAll('.kpi[data-kpi]').forEach(node => {
+      const c = kpis[Number(node.dataset.kpi)];
+      node.onclick = () => {
+        if (c.drillView) { A.setView(c.drillView); return; }
+        state.filters = { search: '', stage: c.drillStage || '', risk: c.drillRisk || '', cause: '' };
+        A.setView('crm');
+      };
+    });
 
     // funnel — pastel emoji flow with arrows
     el.querySelector('#ovFunnel').innerHTML = H.funnelFlow(H.stageCounts(rows));

@@ -102,37 +102,30 @@ OMP.registerPage('crm', {
           ${detail('Follow-up', s.followUp?.dueDate || 'Not set')}
         </div>
         <div class="crm-grid">
-          ${paymentBox(s)}
           ${qtyBox(s)}
           <div class="section-box">
             <div class="section-title"><h3>Update Stage &amp; Reason</h3><span class="badge ${r.kind}">${r.short}</span></div>
             <div class="section-body">
-              <div class="form-row">
-                <select id="stageUpdate">${state.stages.map(st => `<option value="${st.key}" ${st.key === s.funnel ? 'selected' : ''}>${st.label}</option>`).join('')}</select>
-                <button class="primary-btn" id="saveStage">Save</button>
-              </div>
+              <select id="stageUpdate">${state.stages.map(st => `<option value="${st.key}" ${st.key === s.funnel ? 'selected' : ''}>${st.label}</option>`).join('')}</select>
               <select id="stageReason">${H.REASONS.map(([v, l]) => `<option value="${v}" ${v === (s.blockReason || '') ? 'selected' : ''}>${l}</option>`).join('')}</select>
               <textarea id="stageNote" placeholder="Remarks — what happened, next step"></textarea>
-              <div class="form-row">
-                <select id="issueType"><option value="">— why stuck (issue tag) —</option>${H.ISSUE_TYPES.filter(([v])=>v).map(([v, l]) => `<option value="${v}" ${v === (s.issueType || '') ? 'selected' : ''}>${l}</option>`).join('')}</select>
-                <button class="secondary-btn" id="saveIssue">Tag issue</button>
-              </div>
-              <div class="form-row">
-                <input id="ownerUpdate" type="text" value="${esc(s.controlPoc || '')}" placeholder="Owner / Control POC" list="ownerOptionsList" />
-                <button class="secondary-btn" id="saveOwner">Set owner</button>
-              </div>
+              <select id="issueType"><option value="">— why stuck (issue tag) —</option>${H.ISSUE_TYPES.filter(([v])=>v).map(([v, l]) => `<option value="${v}" ${v === (s.issueType || '') ? 'selected' : ''}>${l}</option>`).join('')}</select>
+              <input id="ownerUpdate" type="text" value="${esc(s.controlPoc || '')}" placeholder="Owner / Control POC" list="ownerOptionsList" />
               <datalist id="ownerOptionsList">${(state.ownerOptions||[]).map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
             </div>
           </div>
           <div class="section-box">
             <div class="section-title"><h3>Schedule Follow-up</h3><span class="badge ${s.followUp ? (H.isDue(s) ? 'bad' : 'info') : 'warn'}">${s.followUp ? esc(s.followUp.dueDate) : 'not set'}</span></div>
             <div class="section-body">
-              <div class="form-row"><input id="fuDate" type="date" value="${s.followUp?.dueDate || H.today()}" /><button class="primary-btn" id="saveFu">Set</button></div>
+              <input id="fuDate" type="date" value="${s.followUp?.dueDate || H.today()}" />
               <textarea id="fuNote" placeholder="Follow-up remark">${esc(s.followUp?.note || '')}</textarea>
-              <button class="secondary-btn" id="fuDone">Mark done</button>
+              <button class="secondary-btn" id="fuDone">Mark done now</button>
             </div>
           </div>
           ${docGate(s)}
+          ${paymentBox(s)}
+          ${marginBox(s)}
+          ${pocLogBox(s)}
           <div class="section-box span-2 collapsed">
             <div class="section-title"><h3>Timeline</h3><span class="badge info">${state.timeline.length}</span></div>
             <div class="section-body">
@@ -140,30 +133,91 @@ OMP.registerPage('crm', {
               <div class="form-row"><input id="genNote" type="text" placeholder="Add a remark" /><button class="secondary-btn" id="saveNote">Add</button></div>
             </div>
           </div>
+        </div>
+        <div class="save-footer">
+          <span class="sub" id="crmSaveStatus">No unsaved changes</span>
+          <span style="display:flex;align-items:center;gap:10px">
+            <span class="sub" id="crmSaveToast" style="color:var(--ok);display:none">Saved ✓</span>
+            <button class="primary-btn" id="saveAll">Save changes</button>
+          </span>
         </div>`;
 
       // edit bindings — only when the signed-in associate owns this shipment
       if (!ro) {
-        main.querySelector('#saveStage').onclick = () => A.postUpdate({ type: 'stage', value: main.querySelector('#stageUpdate').value, reason: main.querySelector('#stageReason').value, note: main.querySelector('#stageNote').value });
         main.querySelector('#stageUpdate').onchange = e => {
           const reasonSel = main.querySelector('#stageReason');
           const list = e.target.value === 'rejected' ? H.REJECTION_REASONS : H.REASONS;
           reasonSel.innerHTML = list.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+          markDirty();
         };
-        main.querySelector('#saveOwner').onclick = () => { const v = main.querySelector('#ownerUpdate').value.trim(); if (v) A.postUpdate({ type: 'owner', value: v, note: 'Owner updated' }); };
-        main.querySelector('#saveIssue').onclick = () => { const v = main.querySelector('#issueType').value; if (v) A.postUpdate({ type: 'issue', value: v, note: 'Issue tagged' }); };
-        main.querySelector('#saveQty').onclick = () => {
-          const inv = main.querySelector('#invoiceQtyInput').value, rec = main.querySelector('#receivedQtyInput').value;
-          if (inv) A.postUpdate({ type: 'qty', key: 'invoiceQty', value: inv, note: 'Invoice qty updated' });
-          if (rec) A.postUpdate({ type: 'qty', key: 'receivedQty', value: rec, note: 'Received qty updated' });
-        };
-        main.querySelector('#saveTds').onclick = () => { const v = main.querySelector('#tdsInput').value; if (v) A.postUpdate({ type: 'payment_detail', key: 'tds', value: v, note: 'TDS updated' }); };
         main.querySelector('#saveNote').onclick = () => { const v = main.querySelector('#genNote').value.trim(); if (v) A.postUpdate({ type: 'note', value: v, note: 'Remark' }); };
-        main.querySelector('#saveFu').onclick = () => A.postUpdate({ type: 'followup', value: 'scheduled', dueDate: main.querySelector('#fuDate').value, note: main.querySelector('#fuNote').value, status: 'open' });
         main.querySelector('#fuDone').onclick = () => A.postUpdate({ type: 'followup', value: 'done', dueDate: H.today(), note: main.querySelector('#fuNote').value || 'Follow-up completed', status: 'done' });
         main.querySelectorAll('.doc-select').forEach(x => x.onchange = () => A.postUpdate({ type: 'doc', key: x.dataset.key, value: x.value, note: `${state.docs[x.dataset.key] || x.dataset.key} → ${x.value}` }));
+
+        // one consolidated Save for every editable field above (stage/reason/remarks,
+        // issue tag, owner, qty, TDS, invoice date/terms/due date, follow-up date+note)
+        function markDirty() {
+          const st = main.querySelector('#crmSaveStatus'), tst = main.querySelector('#crmSaveToast');
+          if (st) { st.textContent = 'Unsaved changes'; st.style.color = 'var(--warn)'; }
+          if (tst) tst.style.display = 'none';
+        }
+        main.querySelectorAll('.crm-grid input, .crm-grid select, .crm-grid textarea').forEach(x => {
+          if (['genNote', 'buyerPocNote', 'sellerPocNote'].includes(x.id)) return; // these have their own Add/Log action
+          x.addEventListener('input', markDirty); x.addEventListener('change', markDirty);
+        });
+
+        // Margin % ↔ amount, bidirectionally linked against material value; "No" locks both to 0
+        const materialValue = H.num(s.materialValue);
+        const marginPctEl = main.querySelector('#marginPctInput'), marginAmtEl = main.querySelector('#marginAmtInput');
+        let marginEditing = null;
+        marginPctEl.addEventListener('input', () => { if (marginEditing === 'amt') return; marginEditing = 'pct';
+          marginAmtEl.value = Math.round(materialValue * (parseFloat(marginPctEl.value) || 0) / 100); marginEditing = null; });
+        marginAmtEl.addEventListener('input', () => { if (marginEditing === 'pct') return; marginEditing = 'amt';
+          marginPctEl.value = materialValue ? ((parseFloat(marginAmtEl.value) || 0) / materialValue * 100).toFixed(2) : 0; marginEditing = null; });
+        main.querySelector('#marginApplies').addEventListener('change', e => {
+          const no = e.target.value === 'no';
+          marginPctEl.disabled = no; marginAmtEl.disabled = no;
+          if (no) { marginPctEl.value = 0; marginAmtEl.value = 0; }
+          markDirty();
+        });
+        main.querySelector('#saveBuyerPocLog').onclick = () => {
+          const v = main.querySelector('#buyerPocNote').value.trim();
+          if (v) A.postUpdate({ type: 'poc_contact', key: 'buyer', value: v, note: v });
+        };
+        main.querySelector('#saveSellerPocLog').onclick = () => {
+          const v = main.querySelector('#sellerPocNote').value.trim();
+          if (v) A.postUpdate({ type: 'poc_contact', key: 'seller', value: v, note: v });
+        };
+        main.querySelector('#saveAll').onclick = async () => {
+          const val = id => main.querySelector(id)?.value;
+          const stageVal = val('#stageUpdate'), reasonVal = val('#stageReason'), stageNote = val('#stageNote');
+          const issueVal = val('#issueType');
+          const ownerVal = (val('#ownerUpdate') || '').trim();
+          const invQty = val('#invoiceQtyInput'), recQty = val('#receivedQtyInput');
+          const tdsVal = val('#tdsInput');
+          const invDate = val('#invoiceDateInput'), terms = val('#paymentTermsInput'), dueDate = val('#dueDateInput');
+          const fuDate = val('#fuDate'), fuNote = val('#fuNote');
+          const marginAppliesVal = val('#marginApplies'), marginPctVal = val('#marginPctInput'), marginInvoiceStatusVal = val('#marginInvoiceStatus');
+
+          if (stageVal && stageVal !== s.funnel) await A.postUpdate({ type: 'stage', value: stageVal, reason: reasonVal, note: stageNote });
+          else if (reasonVal !== (s.blockReason || '') || stageNote) await A.postUpdate({ type: 'stage', value: s.funnel, reason: reasonVal, note: stageNote });
+          if (issueVal) await A.postUpdate({ type: 'issue', value: issueVal, note: 'Issue tagged' });
+          if (ownerVal && ownerVal !== (s.controlPoc || '')) await A.postUpdate({ type: 'owner', value: ownerVal, note: 'Owner updated' });
+          if (invQty) await A.postUpdate({ type: 'qty', key: 'invoiceQty', value: invQty, note: 'Invoice qty updated' });
+          if (recQty) await A.postUpdate({ type: 'qty', key: 'receivedQty', value: recQty, note: 'Received qty updated' });
+          if (tdsVal) await A.postUpdate({ type: 'payment_detail', key: 'tds', value: tdsVal, note: 'TDS updated' });
+          if (invDate) await A.postUpdate({ type: 'invoice_detail', key: 'invoiceDate', value: invDate, note: 'Invoice date updated' });
+          if (terms) await A.postUpdate({ type: 'invoice_detail', key: 'paymentTerms', value: terms, note: 'Payment terms updated' });
+          if (dueDate) await A.postUpdate({ type: 'invoice_detail', key: 'dueDate', value: dueDate, note: 'Due date updated' });
+          if (fuDate && (fuDate !== s.followUp?.dueDate || fuNote !== (s.followUp?.note || ''))) {
+            await A.postUpdate({ type: 'followup', value: 'scheduled', dueDate: fuDate, note: fuNote, status: 'open' });
+          }
+          if (marginAppliesVal && marginAppliesVal !== (s.marginApplies || 'pending')) await A.postUpdate({ type: 'margin', key: 'applies', value: marginAppliesVal, note: 'Margin applicable updated' });
+          if (marginAppliesVal !== 'no' && marginPctVal) await A.postUpdate({ type: 'margin', key: 'pctOverride', value: marginPctVal, note: 'Margin % updated' });
+          if (marginInvoiceStatusVal && marginInvoiceStatusVal !== (s.marginInvoiceStatus || 'not_raised')) await A.postUpdate({ type: 'margin', key: 'invoiceStatus', value: marginInvoiceStatusVal, note: 'Margin invoice status updated' });
+        };
       } else {
-        main.querySelectorAll('.section-body button, .section-body input, .section-body select, .section-body textarea').forEach(x => x.disabled = true);
+        main.querySelectorAll('.section-body button, .section-body input, .section-body select, .section-body textarea, #saveAll').forEach(x => x.disabled = true);
       }
       // collapsible sections — click header (not a control) to fold
       main.querySelectorAll('.section-title').forEach(t => t.onclick = e => {
@@ -184,13 +238,17 @@ OMP.registerPage('crm', {
       const since = inv && bal > 1 ? Math.floor((now - inv) / 86400000) : null;
       const badge = s.paymentDerived === 'paid' ? '<span class="badge ok">Cleared</span>' : s.paymentRisk === 'overdue' ? '<span class="badge bad">Overdue</span>' : s.paymentDerived === 'partial' ? '<span class="badge warn">Partial</span>' : '<span class="badge neutral">Pending</span>';
       const overdueTxt = bal <= 1 ? 'Cleared' : (overdue != null && overdue > 0 ? `<span style="color:var(--bad)">${overdue} days late</span>` : (due ? 'On time' : '—'));
+      const toISO = d => d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : '';
       return `<div class="section-box span-2">
         <div class="section-title"><h3>Payment</h3>${badge}</div>
         <div class="section-body">
+          <p class="sub" style="margin:-2px 0 2px">Invoice date, terms and due date are entered manually — not from a feed.</p>
+          <div class="form-row">
+            <input id="invoiceDateInput" type="date" value="${toISO(inv)}" title="Invoice date" />
+            <input id="paymentTermsInput" type="text" value="${esc(s.paymentTerms || '')}" placeholder="Terms (e.g. D+15)" />
+            <input id="dueDateInput" type="date" value="${toISO(due)}" title="Due date" />
+          </div>
           <div class="pay-grid">
-            ${pcell('Invoice date', fmtD(inv))}
-            ${pcell('Terms', esc(s.paymentTerms || '—'))}
-            ${pcell('Due date', fmtD(due))}
             ${pcell('Overdue', overdueTxt)}
             ${pcell('Pending since', since != null ? since + ' days' : '—')}
             ${pcell('Paid', H.shortMoney(paid))}
@@ -204,7 +262,6 @@ OMP.registerPage('crm', {
           </div>
           <div class="form-row" style="margin-top:6px">
             <input id="tdsInput" type="number" step="0.01" value="${s.tds != null ? s.tds : ''}" placeholder="TDS amount (₹)" />
-            <button class="secondary-btn" id="saveTds">Save TDS</button>
           </div>
         </div>
       </div>`;
@@ -216,8 +273,46 @@ OMP.registerPage('crm', {
         <div class="section-title"><h3>Quantity</h3><span class="badge ${shortageFlag}">${esc(H.title ? H.title(s.shortageStatus || '') : (s.shortageStatus || ''))}</span></div>
         <div class="section-body">
           <div class="form-row"><input id="invoiceQtyInput" type="number" value="${s.invoiceQty || ''}" placeholder="Invoice qty (kg)" /></div>
-          <div class="form-row"><input id="receivedQtyInput" type="number" value="${s.receivedQty || ''}" placeholder="Received qty (kg)" /><button class="secondary-btn" id="saveQty">Save qty</button></div>
+          <div class="form-row"><input id="receivedQtyInput" type="number" value="${s.receivedQty || ''}" placeholder="Received qty (kg)" /></div>
           ${s.shortageQty != null ? `<p class="sub">Shortage: ${s.shortageQty} kg</p>` : ''}
+        </div>
+      </div>`;
+    }
+
+    function marginBox(s) {
+      const locked = s.marginApplies === 'no';
+      return `<div class="section-box span-2">
+        <div class="section-title"><h3>Supplier Margin</h3><span class="badge neutral">${esc(H.title(s.marginInvoiceStatus || 'not_raised'))}</span></div>
+        <div class="section-body">
+          <p class="sub" style="margin:-2px 0 2px">Recykal's own commission from the seller — separate from GST/TDS above.</p>
+          <div class="form-row">
+            <select id="marginApplies">
+              <option value="pending" ${s.marginApplies === 'pending' || !s.marginApplies ? 'selected' : ''}>Pending confirmation</option>
+              <option value="yes" ${s.marginApplies === 'yes' ? 'selected' : ''}>Yes</option>
+              <option value="no" ${s.marginApplies === 'no' ? 'selected' : ''}>No — supplier doesn't agree</option>
+            </select>
+            <input id="marginPctInput" type="number" step="0.01" value="${(s.marginPct || 0).toFixed(2)}" placeholder="Margin %" ${locked ? 'disabled' : ''} />
+            <input id="marginAmtInput" type="number" step="1" value="${Math.round(s.marginAmount || 0)}" placeholder="Margin amount (₹)" ${locked ? 'disabled' : ''} />
+            <select id="marginInvoiceStatus">
+              <option value="not_raised" ${(s.marginInvoiceStatus || 'not_raised') === 'not_raised' ? 'selected' : ''}>Not raised</option>
+              <option value="raised" ${s.marginInvoiceStatus === 'raised' ? 'selected' : ''}>Raised</option>
+              <option value="sent" ${s.marginInvoiceStatus === 'sent' ? 'selected' : ''}>Sent to supplier</option>
+            </select>
+          </div>
+        </div>
+      </div>`;
+    }
+
+    function pocLogBox(s) {
+      const fmtLog = e => e ? `<p class="sub">${esc(e.note || '')} — <i>${esc(e.actor || '')}, ${fmtD(new Date(e.createdAt))}${e.shipmentId && e.shipmentId !== s.shipmentId ? ` on ${esc(e.shipmentId)}` : ''}</i></p>` : '<p class="sub">No contact logged yet.</p>';
+      return `<div class="section-box span-2">
+        <div class="section-title"><h3>POC Contact Log</h3><span class="badge neutral">cross-shipment</span></div>
+        <div class="section-body">
+          <p class="sub" style="margin:-2px 0 2px">Buyer POC and seller POC are external contacts — never our txn team.</p>
+          <div><b class="sub">Buyer POC (${esc(s.brPoc || '—')})</b>${fmtLog(s.lastBuyerPocContact)}</div>
+          <div class="form-row"><input id="buyerPocNote" type="text" placeholder="Log a new buyer POC contact…" /><button class="secondary-btn" id="saveBuyerPocLog">Log</button></div>
+          <div><b class="sub">Seller POC (${esc(s.srPoc || '—')})</b>${fmtLog(s.lastSellerPocContact)}</div>
+          <div class="form-row"><input id="sellerPocNote" type="text" placeholder="Log a new seller POC contact…" /><button class="secondary-btn" id="saveSellerPocLog">Log</button></div>
         </div>
       </div>`;
     }

@@ -14,8 +14,16 @@ OMP.registerPage('pipeline', {
         <div id="pipeFunnel"></div>
       </section>
       <section class="card" style="margin-top:16px">
-        <div class="card-head"><div><h2 id="pipeTitle">All shipments</h2><p>Click a shipment to open it in CRM</p></div></div>
-        <div class="list cols-4" id="pipeList"></div>
+        <div class="card-head"><div><h2 id="pipeTitle">All shipments</h2><p>Click a row to open it in CRM</p></div></div>
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead><tr>
+              <th>Shipment</th><th>Buyer</th><th>Owner</th><th>Stage</th>
+              <th class="num">Days</th><th class="num">Balance</th><th>Payment</th>
+            </tr></thead>
+            <tbody id="pipeList"></tbody>
+          </table>
+        </div>
       </section>`;
 
     el.querySelector('#pipeFunnel').innerHTML = H.funnelFlow(count, { active: state.pipelineStage, big: true });
@@ -26,10 +34,15 @@ OMP.registerPage('pipeline', {
     const label = state.pipelineStage ? (state.stages.find(s => s.key === state.pipelineStage)?.label || state.pipelineStage) : 'All shipments';
     el.querySelector('#pipeTitle').textContent = `${label} (${list.length})`;
     el.querySelector('#pipeList').innerHTML = list.map(s => `
-      <button class="pipeline-item" data-id="${H.esc(s.shipmentId)}">
-        <div><b>${H.esc(s.shipmentId)}</b><p style="margin-top:4px">${H.esc(s.buyer || '-')}</p>${H.payMini(s)}</div>
-        <div class="pipe-side">${H.stagePill(s)} ${H.docChip(s)} ${H.paymentPill(s)} ${H.proofChip(s)}</div>
-      </button>`).join('') || '<p class="sub" style="padding:8px">No shipments in this stage.</p>';
-    el.querySelectorAll('.pipeline-item').forEach(b => b.onclick = () => A.openInCrm(b.dataset.id));
+      <tr data-id="${H.esc(s.shipmentId)}">
+        <td class="id">${H.esc(s.shipmentId)}</td>
+        <td class="buyer">${H.esc(s.buyer || '-')}</td>
+        <td>${H.esc(s.owner || 'Unassigned')}</td>
+        <td>${H.stagePill(s)}</td>
+        <td class="num">${H.num(s.stageAge)}d</td>
+        <td class="num">${H.shortMoney(s.balance)}</td>
+        <td>${H.paymentPill(s)}</td>
+      </tr>`).join('') || '<tr><td colspan="7" class="sub" style="padding:12px">No shipments in this stage.</td></tr>';
+    el.querySelectorAll('#pipeList tr[data-id]').forEach(tr => tr.onclick = () => A.openInCrm(tr.dataset.id));
   }
 });

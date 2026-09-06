@@ -184,8 +184,13 @@ const OMP = (() => {
     if (e.type === 'qty') main = `${esc(title(e.key))} → ${esc(e.value)} kg`;
     if (e.type === 'payment_detail') main = `${esc(e.key.toUpperCase())} → ₹${esc(e.value)}`;
     if (e.type === 'issue') main = `Issue tagged → ${esc(issueTypeLabel(e.value))}`;
-    if (e.type === 'buyer_contact') main = `Buyer contacted`;
-    if (e.type === 'margin') main = `Margin ${e.key === 'invoiceRaised' ? 'invoice raised' : 'invoice sent'} → ${esc(e.value)}`;
+    if (e.type === 'invoice_detail') main = `${esc(title(e.key))} → ${esc(e.value)}`;
+    if (e.type === 'poc_contact') main = `${e.key === 'seller' ? 'Seller' : 'Buyer'} POC contacted`;
+    if (e.type === 'margin') {
+      main = e.key === 'applies' ? `Margin applicable? → ${esc(title(e.value))}`
+        : e.key === 'invoiceStatus' ? `Margin invoice → ${esc(title(e.value))}`
+        : `Margin % → ${esc(e.value)}%`;
+    }
     const reason = e.reason ? `<div class="event-reason">▲ ${esc(reasonLabel(e.reason))}</div>` : '';
     return `<div class="event"><div class="event-top"><span>${esc(e.actor || 'User')}</span><span>${new Date(e.createdAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span></div><div class="event-main">${main}</div>${reason}${e.note ? `<div class="event-note">${esc(e.note)}</div>` : ''}</div>`;
   }
@@ -239,6 +244,18 @@ const OMP = (() => {
   }
 
   /* ── view / render orchestration ── */
+  // Associates only see the day-to-day work surfaces; the analytics/management tabs
+  // (Why Pending, Trends, Stage Aging, Pipeline Health, Owner Performance, Finance)
+  // are admin-only — same tabs exist for everyone server-side, this just keeps them
+  // out of an associate's way.
+  function applyRoleTabVisibility() {
+    const isAdmin = state.user.role === 'admin';
+    document.querySelectorAll('.view-tab[data-admin]').forEach(b => b.hidden = !isAdmin);
+    if (!isAdmin) {
+      const activeAdminTab = document.querySelector('.view-tab.active[data-admin]');
+      if (activeAdminTab) setView('overview');
+    }
+  }
   function setView(view) {
     state.view = view;
     document.querySelectorAll('.view-tab').forEach(x => x.classList.toggle('active', x.dataset.view === view));
@@ -271,6 +288,7 @@ const OMP = (() => {
         if (first) await selectShipment(first.shipmentId, false);
         // refresh picker selection labels
         sel.value = state.user.email;
+        applyRoleTabVisibility();
         renderActive();
       };
     }
@@ -302,6 +320,7 @@ const OMP = (() => {
       }
     } catch (e) { /* header links are optional — never block boot on it */ }
     document.querySelectorAll('.view-tab').forEach(b => b.onclick = () => setView(b.dataset.view));
+    applyRoleTabVisibility();
     const first = ranked(filtered())[0] || state.shipments[0];
     if (first) await selectShipment(first.shipmentId, false);
     setView(state.view);
