@@ -186,6 +186,13 @@ p { color: var(--muted); }
 .pipeline-item { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
 .pipe-side { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
 
+.ck-group { display: contents; }
+.ck-group[hidden] { display: none; }
+.cockpit-tabs { display: flex; gap: 4px; padding: 12px 16px 0; border-bottom: 1px solid var(--line-soft); }
+.ck-tab { border: 0; background: transparent; padding: 9px 14px; font-size: 12.5px; font-weight: 700; color: var(--muted); border-radius: 8px 8px 0 0; cursor: pointer; font-family: inherit; }
+.ck-tab:hover { color: var(--brand); background: var(--surface-2); }
+.ck-tab.active { color: var(--brand); background: var(--brand-soft); }
+
 .save-footer { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; background: var(--surface); border-top: 1px solid var(--line); padding: 12px 16px; margin-top: 16px; box-shadow: 0 -4px 12px rgba(0,0,0,.05); border-radius: var(--r); }
 
 /* ── generic sortable-look data table (Pipeline shipment list, etc.) ── */

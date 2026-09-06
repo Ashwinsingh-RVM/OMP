@@ -101,38 +101,66 @@ OMP.registerPage('crm', {
           ${detail('Net Payable', H.shortMoney(s.netPayable || s.total), true)}
           ${detail('Follow-up', s.followUp?.dueDate || 'Not set')}
         </div>
+        <div class="cockpit-tabs" id="cockpitTabs">
+          <button class="ck-tab active" data-g="stage">Stage &amp; Reason</button>
+          <button class="ck-tab" data-g="qtyfin">Quantity &amp; Finance</button>
+          <button class="ck-tab" data-g="docs">Docs</button>
+          <button class="ck-tab" data-g="people">People &amp; Contact</button>
+          <button class="ck-tab" data-g="timeline">Timeline</button>
+        </div>
         <div class="crm-grid">
-          ${qtyBox(s)}
-          <div class="section-box">
-            <div class="section-title"><h3>Update Stage &amp; Reason</h3><span class="badge ${r.kind}">${r.short}</span></div>
-            <div class="section-body">
-              <select id="stageUpdate">${state.stages.map(st => `<option value="${st.key}" ${st.key === s.funnel ? 'selected' : ''}>${st.label}</option>`).join('')}</select>
-              <select id="stageReason">${H.REASONS.map(([v, l]) => `<option value="${v}" ${v === (s.blockReason || '') ? 'selected' : ''}>${l}</option>`).join('')}</select>
-              <textarea id="stageNote" placeholder="Remarks — what happened, next step"></textarea>
-              <select id="issueType"><option value="">— why stuck (issue tag) —</option>${H.ISSUE_TYPES.filter(([v])=>v).map(([v, l]) => `<option value="${v}" ${v === (s.issueType || '') ? 'selected' : ''}>${l}</option>`).join('')}</select>
-              <input id="ownerUpdate" type="text" value="${esc(s.controlPoc || '')}" placeholder="Owner / Control POC" list="ownerOptionsList" />
-              <datalist id="ownerOptionsList">${(state.ownerOptions||[]).map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
+
+          <div class="ck-group" data-group="stage">
+            <div class="section-box">
+              <div class="section-title"><h3>Update Stage &amp; Reason</h3><span class="badge ${r.kind}">${r.short}</span></div>
+              <div class="section-body">
+                <select id="stageUpdate">${state.stages.map(st => `<option value="${st.key}" ${st.key === s.funnel ? 'selected' : ''}>${st.label}</option>`).join('')}</select>
+                <select id="stageReason">${H.REASONS.map(([v, l]) => `<option value="${v}" ${v === (s.blockReason || '') ? 'selected' : ''}>${l}</option>`).join('')}</select>
+                <textarea id="stageNote" placeholder="Remarks — what happened, next step"></textarea>
+                <select id="issueType"><option value="">— why stuck (issue tag) —</option>${H.ISSUE_TYPES.filter(([v])=>v).map(([v, l]) => `<option value="${v}" ${v === (s.issueType || '') ? 'selected' : ''}>${l}</option>`).join('')}</select>
+              </div>
+            </div>
+            <div class="section-box">
+              <div class="section-title"><h3>Schedule Follow-up</h3><span class="badge ${s.followUp ? (H.isDue(s) ? 'bad' : 'info') : 'warn'}">${s.followUp ? esc(s.followUp.dueDate) : 'not set'}</span></div>
+              <div class="section-body">
+                <input id="fuDate" type="date" value="${s.followUp?.dueDate || H.today()}" />
+                <textarea id="fuNote" placeholder="Follow-up remark">${esc(s.followUp?.note || '')}</textarea>
+                <button class="secondary-btn" id="fuDone">Mark done now</button>
+              </div>
             </div>
           </div>
-          <div class="section-box">
-            <div class="section-title"><h3>Schedule Follow-up</h3><span class="badge ${s.followUp ? (H.isDue(s) ? 'bad' : 'info') : 'warn'}">${s.followUp ? esc(s.followUp.dueDate) : 'not set'}</span></div>
-            <div class="section-body">
-              <input id="fuDate" type="date" value="${s.followUp?.dueDate || H.today()}" />
-              <textarea id="fuNote" placeholder="Follow-up remark">${esc(s.followUp?.note || '')}</textarea>
-              <button class="secondary-btn" id="fuDone">Mark done now</button>
+
+          <div class="ck-group" data-group="qtyfin" hidden>
+            ${qtyBox(s)}
+            ${paymentBox(s)}
+            ${marginBox(s)}
+          </div>
+
+          <div class="ck-group" data-group="docs" hidden>
+            ${docGate(s)}
+          </div>
+
+          <div class="ck-group" data-group="people" hidden>
+            <div class="section-box">
+              <div class="section-title"><h3>Owner</h3><span class="badge neutral">txn team exec</span></div>
+              <div class="section-body">
+                <input id="ownerUpdate" type="text" value="${esc(s.controlPoc || '')}" placeholder="Owner / Control POC" list="ownerOptionsList" />
+                <datalist id="ownerOptionsList">${(state.ownerOptions||[]).map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
+              </div>
+            </div>
+            ${pocLogBox(s)}
+          </div>
+
+          <div class="ck-group" data-group="timeline" hidden>
+            <div class="section-box span-2">
+              <div class="section-title" style="cursor:default"><h3>Timeline</h3><span class="badge info">${state.timeline.length}</span></div>
+              <div class="section-body">
+                <div class="timeline">${state.timeline.map(H.eventHtml).join('') || '<p class="sub">No updates yet.</p>'}</div>
+                <div class="form-row"><input id="genNote" type="text" placeholder="Add a remark" /><button class="secondary-btn" id="saveNote">Add</button></div>
+              </div>
             </div>
           </div>
-          ${docGate(s)}
-          ${paymentBox(s)}
-          ${marginBox(s)}
-          ${pocLogBox(s)}
-          <div class="section-box span-2 collapsed">
-            <div class="section-title"><h3>Timeline</h3><span class="badge info">${state.timeline.length}</span></div>
-            <div class="section-body">
-              <div class="timeline">${state.timeline.map(H.eventHtml).join('') || '<p class="sub">No updates yet.</p>'}</div>
-              <div class="form-row"><input id="genNote" type="text" placeholder="Add a remark" /><button class="secondary-btn" id="saveNote">Add</button></div>
-            </div>
-          </div>
+
         </div>
         <div class="save-footer">
           <span class="sub" id="crmSaveStatus">No unsaved changes</span>
@@ -223,6 +251,13 @@ OMP.registerPage('crm', {
       main.querySelectorAll('.section-title').forEach(t => t.onclick = e => {
         if (e.target.closest('button, select, input, textarea, a')) return;
         t.parentElement.classList.toggle('collapsed');
+      });
+      // cockpit sub-tabs — group the boxes above instead of showing all at once
+      main.querySelector('#cockpitTabs').addEventListener('click', e => {
+        const b = e.target.closest('.ck-tab'); if (!b) return;
+        main.querySelectorAll('.ck-tab').forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+        main.querySelectorAll('.ck-group').forEach(g => g.hidden = g.dataset.group !== b.dataset.g);
       });
     }
 
