@@ -59,12 +59,16 @@ function createJsonStore() {
     // New-shipment intake: only ever appends a brand-new row, by shipmentId — never
     // overwrites an existing one (all further change to an existing shipment is
     // event-sourced via addUpdate, not this).
+    // Returns true if the row was actually inserted, false if shipmentId already
+    // existed (caller must check this — a silent no-op looks identical to success
+    // otherwise, which is exactly how a same-ID race would lose someone's data).
     async addShipment(row) {
       const current = readJson(SHIPMENTS_FILE, { shipments: [] });
       current.shipments = current.shipments || [];
-      if (current.shipments.some((r) => r.shipmentId === row.shipmentId)) return;
+      if (current.shipments.some((r) => r.shipmentId === row.shipmentId)) return false;
       current.shipments.push(row);
       writeJson(SHIPMENTS_FILE, current);
+      return true;
     },
     async getPin(email) {
       const pins = readJson(PINS_FILE, { pins: {} }).pins || {};
@@ -192,9 +196,11 @@ function createPgStore() {
         ]
       );
     },
+    // Returns true if the row was actually inserted, false on a shipmentId
+    // conflict — caller must check this (see the JSON-mode note above).
     async addShipment(row) {
       await ensureReady();
-      await pool.query(
+      const result = await pool.query(
         `INSERT INTO shipments
            (shipment_id, order_id, vertical, material, seller, sr_poc, buyer,
             br_poc, control_poc, funnel, stage_raw, dispatch_date, due_date, docs, raw)
@@ -205,6 +211,7 @@ function createPgStore() {
          row.controlPoc || null, row.funnel || null, row.stageRaw || null,
          row.dispatchDate || null, row.dueDate || null, JSON.stringify(row.docs || {}), JSON.stringify(row)]
       );
+      return result.rowCount > 0;
     },
     async getPin(email) {
       await ensureReady();

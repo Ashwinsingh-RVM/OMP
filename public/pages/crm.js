@@ -56,11 +56,14 @@ OMP.registerPage('crm', {
 
     // New Shipment — only the ID is auto-generated, everything else is typed in here
     el.querySelector('#newShipmentBtn').onclick = () => el.querySelector('#newShipmentBox').classList.toggle('collapsed');
-    el.querySelector('#nsCreate').onclick = async () => {
+    el.querySelector('#nsCreate').onclick = async (e) => {
+      const btn = e.currentTarget;
+      if (btn.disabled) return; // double-click guard — avoid firing two creates
       const errEl = el.querySelector('#nsError');
       errEl.style.display = 'none';
       const buyer = el.querySelector('#nsBuyer').value.trim();
       if (!buyer) { errEl.textContent = 'Buyer is required.'; errEl.style.display = 'block'; return; }
+      btn.disabled = true;
       try {
         const res = await A.api('/api/shipments', {
           method: 'POST',
@@ -78,8 +81,12 @@ OMP.registerPage('crm', {
         await A.selectShipment(res.shipmentId, false);
         A.renderActive();
         A.toast(res.autoAssigned ? `Created ${res.shipmentId} — auto-assigned to ${res.controlPoc}` : `Created ${res.shipmentId}`);
-      } catch (e) {
-        errEl.textContent = 'Could not create shipment — try again.'; errEl.style.display = 'block';
+      } catch (e2) {
+        let msg = 'Could not create shipment — try again.';
+        try { msg = JSON.parse(e2.message).error || msg; } catch (parseErr) { /* keep default */ }
+        errEl.textContent = msg; errEl.style.display = 'block';
+      } finally {
+        btn.disabled = false;
       }
     };
 
@@ -265,7 +272,11 @@ OMP.registerPage('crm', {
           const v = main.querySelector('#sellerPocNote').value.trim();
           if (v) A.postUpdate({ type: 'poc_contact', key: 'seller', value: v, note: v });
         };
-        main.querySelector('#saveAll').onclick = async () => {
+        main.querySelector('#saveAll').onclick = async (e) => {
+          const btn = e.currentTarget;
+          if (btn.disabled) return; // double-click guard
+          btn.disabled = true;
+          try {
           const val = id => main.querySelector(id)?.value;
           const stageVal = val('#stageUpdate'), reasonVal = val('#stageReason'), stageNote = val('#stageNote');
           const issueVal = val('#issueType');
@@ -311,6 +322,7 @@ OMP.registerPage('crm', {
             const v = el2 && el2.checked ? 'yes' : 'no';
             if (v !== (s[key] || 'no')) await A.postUpdate({ type: 'detail', key, value: v, note: 'Milestone updated' });
           }
+          } finally { btn.disabled = false; }
         };
       } else {
         main.querySelectorAll('.section-body button, .section-body input, .section-body select, .section-body textarea, #saveAll').forEach(x => x.disabled = true);

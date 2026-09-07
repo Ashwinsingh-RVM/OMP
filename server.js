@@ -251,8 +251,12 @@ async function computeState() {
     let merged = { ...row, docs: { ...(row.docs || {}) } };
     for (const event of events) {
       if (event.type === "stage") {
+        // Only reset the aging clock when the stage genuinely changes — logging a
+        // remark/reason with the dropdown left on the current stage (very common:
+        // "why stuck" reason and stage-change share one event type) must NOT make
+        // Stage Aging think the shipment just re-entered its current stage.
+        if (event.value !== merged.funnel) merged.stageEnteredAt = event.createdAt;
         merged.funnel = event.value;
-        merged.stageEnteredAt = event.createdAt;
         if (event.value === "completed" || event.value === "rejected") merged.blockReason = "";
         if (event.value === "rejected" && event.reason) merged.rejectionReason = event.reason;
         if (event.reason) merged.blockReason = event.reason;
@@ -322,7 +326,11 @@ async function computeState() {
     const owner = String(merged.controlPoc || "Unassigned").trim();
     // Supplier margin: shipment-level override > standard 0.5% default. "No" locks it to 0.
     const marginApplies = merged.marginApplies || "pending";
-    const marginPct = marginApplies === "no" ? 0 : toNumber(merged.marginPctOverride) || 0.5;
+    // `|| 0.5` would wrongly replace a genuine 0% override with the default
+    // (0 is falsy) — check presence explicitly instead.
+    const marginPct = marginApplies === "no" ? 0
+      : merged.marginPctOverride !== undefined && merged.marginPctOverride !== "" ? toNumber(merged.marginPctOverride)
+      : 0.5;
     const marginAmount = toNumber(merged.materialValue) * marginPct / 100;
     const buyerLog = (row.brPoc && pocContactMap.buyer.get(nameKey(row.brPoc))) || [];
     const sellerLog = (row.srPoc && pocContactMap.seller.get(nameKey(row.srPoc))) || [];
@@ -1130,8 +1138,12 @@ async function handleApi(req, res, url) {
       gst: "0", total: "0", debitNote: "0", netPayable: "0", paidAmount: "0", balance: "0",
       paymentStatus: "", docs: {}, remarks: "",
     };
-    await store.addShipment(row);
+    const inserted = await store.addShipment(row);
     invalidateState();
+    // Someone else's request won a same-ID race between our uniqueness check and
+    // this insert (only possible on Postgres, where both are real network I/O) —
+    // report it honestly instead of claiming success over a silently-discarded row.
+    if (!inserted) return sendJson(res, { error: "That Shipment ID was just taken — try again" }, 409);
     return sendJson(res, { ok: true, shipmentId, controlPoc, autoAssigned: !controlPocIn });
   }
   return sendJson(res, { error: "Not found" }, 404);
