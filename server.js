@@ -1158,6 +1158,30 @@ async function handleApi(req, res, url) {
     if (!inserted) return sendJson(res, { error: "That Shipment ID was just taken — try again" }, 409);
     return sendJson(res, { ok: true, shipmentId, controlPoc, autoAssigned: !controlPocIn });
   }
+  if (req.method === "POST" && url.pathname === "/api/admin/bulk-import-shipments") {
+    // Admin-only bulk backfill/migration tool — inserts whole shipment rows in
+    // one call (e.g. catching production up from a one-time sheet import run
+    // locally). Reuses store.addShipment()'s existing ON CONFLICT DO NOTHING,
+    // so it is safe to re-run: only shipmentIds not already present are added,
+    // nothing existing is ever overwritten.
+    if (authGateOn() && user.role !== "admin") return sendJson(res, { error: "Forbidden" }, 403);
+    let payload;
+    try {
+      payload = await readBody(req);
+    } catch (e) {
+      return sendJson(res, { error: "Invalid request" }, 400);
+    }
+    const rows = Array.isArray(payload.shipments) ? payload.shipments : [];
+    let inserted = 0;
+    let skipped = 0;
+    for (const row of rows) {
+      if (!row || !row.shipmentId) { skipped++; continue; }
+      const ok = await store.addShipment(row);
+      if (ok) inserted++; else skipped++;
+    }
+    invalidateState();
+    return sendJson(res, { ok: true, inserted, skipped, totalSent: rows.length });
+  }
   return sendJson(res, { error: "Not found" }, 404);
 }
 
