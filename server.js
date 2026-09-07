@@ -1182,6 +1182,34 @@ async function handleApi(req, res, url) {
     invalidateState();
     return sendJson(res, { ok: true, inserted, skipped, totalSent: rows.length });
   }
+  if (req.method === "POST" && url.pathname === "/api/admin/bulk-reassign-owners") {
+    // Admin-only bulk owner reassignment — e.g. rebalancing the whole book across
+    // the current active team in one pass. Each entry just appends a normal
+    // "owner" event (same path a single manual reassignment takes), so the full
+    // history stays intact in each shipment's timeline; nothing is overwritten in
+    // place. Body: { assignments: [{ shipmentId, owner }, ...] }.
+    if (authGateOn() && user.role !== "admin") return sendJson(res, { error: "Forbidden" }, 403);
+    let payload;
+    try {
+      payload = await readBody(req);
+    } catch (e) {
+      return sendJson(res, { error: "Invalid request" }, 400);
+    }
+    const assignments = Array.isArray(payload.assignments) ? payload.assignments : [];
+    const knownIds = new Set(state.shipments.map((s) => s.shipmentId));
+    let applied = 0;
+    let skipped = 0;
+    for (const a of assignments) {
+      const shipmentId = String((a && a.shipmentId) || "").trim();
+      const checked = shipmentId && knownIds.has(shipmentId) ? validateUpdate({ type: "owner", value: (a && a.owner) || "" }) : { error: "unknown shipment" };
+      if (checked.error || !checked.value || !checked.value.value) { skipped++; continue; }
+      const event = createEvent({ ...checked.value, shipmentId, actor: user.name, actorEmail: user.email });
+      await store.addUpdate(event);
+      applied++;
+    }
+    invalidateState();
+    return sendJson(res, { ok: true, applied, skipped, totalSent: assignments.length });
+  }
   return sendJson(res, { error: "Not found" }, 404);
 }
 
