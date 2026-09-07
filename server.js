@@ -265,6 +265,7 @@ async function computeState() {
       if (event.type === "payment_detail" && event.key === "tds") merged.tds = event.value;
       if (event.type === "issue") merged.issueType = event.value;
       if (event.type === "invoice_detail") merged[event.key] = event.value;
+      if (event.type === "detail") merged[event.key] = event.value;
       if (event.type === "margin" && event.key === "applies") merged.marginApplies = event.value;
       if (event.type === "margin" && event.key === "pctOverride") merged.marginPctOverride = event.value;
       if (event.type === "margin" && event.key === "invoiceStatus") merged.marginInvoiceStatus = event.value;
@@ -827,11 +828,16 @@ function securityHeaders() {
 }
 
 // Allowlists + length limits for update events (never trust client shape).
-const UPDATE_TYPES = new Set(["stage", "doc", "note", "owner", "followup", "qty", "payment_detail", "issue", "invoice_detail", "margin", "poc_contact"]);
+const UPDATE_TYPES = new Set(["stage", "doc", "note", "owner", "followup", "qty", "payment_detail", "issue", "invoice_detail", "margin", "poc_contact", "detail"]);
 const DOC_VALUES = new Set(["missing", "pending", "ok", "na"]);
 const QTY_KEYS = new Set(["invoiceQty", "receivedQty"]);
 const PAYMENT_DETAIL_KEYS = new Set(["tds"]);
 const INVOICE_DETAIL_KEYS = new Set(["invoiceDate", "paymentTerms", "dueDate"]);
+// Generic manual fields the source sheet tracks that don't fit an existing type —
+// mirrors the invoice_detail pattern (key/value, same generic columns, no new schema).
+const DETAIL_DATE_KEYS = new Set(["mmDate", "dispatchDate", "vehicleExpDate", "vehicleActualDate", "vehiclePortalDate", "deliveredActualDate", "deliveredPortalDate", "completionDate"]);
+const DETAIL_TEXT_KEYS = new Set(["orderId", "invoiceNo", "distance", "dnStatus", "dnRemarks", "unloaded", "podReceived", "paymentDoneConfirmed"]);
+const DETAIL_KEYS = new Set([...DETAIL_DATE_KEYS, ...DETAIL_TEXT_KEYS]);
 const ISSUE_TYPES = new Set(["gst_pending", "payment_advice_pending", "po_pending", "tracking_issue", "buyer_detail_issue", "other"]);
 const MARGIN_KEYS = new Set(["applies", "pctOverride", "invoiceStatus"]);
 const MARGIN_APPLIES_VALUES = new Set(["pending", "yes", "no"]);
@@ -895,6 +901,14 @@ function validateUpdate(p) {
   } else if (type === "poc_contact") {
     if (!POC_CONTACT_KEYS.has(p.key)) return { error: "invalid poc_contact key" };
     out.key = p.key; out.value = clampStr(p.value, 300);
+  } else if (type === "detail") {
+    if (!DETAIL_KEYS.has(p.key)) return { error: "invalid detail key" };
+    if (DETAIL_DATE_KEYS.has(p.key)) {
+      if (p.value && !/^\d{4}-\d{2}-\d{2}$/.test(String(p.value))) return { error: "invalid date" };
+      out.key = p.key; out.value = p.value || "";
+    } else {
+      out.key = p.key; out.value = clampStr(p.value, 300);
+    }
   }
   return { value: out };
 }

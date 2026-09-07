@@ -149,6 +149,7 @@ OMP.registerPage('crm', {
           <button class="ck-tab active" data-g="stage">Stage &amp; Reason</button>
           <button class="ck-tab" data-g="qtyfin">Quantity &amp; Finance</button>
           <button class="ck-tab" data-g="docs">Docs</button>
+          <button class="ck-tab" data-g="milestones">Milestones</button>
           <button class="ck-tab" data-g="people">People &amp; Contact</button>
           <button class="ck-tab" data-g="timeline">Timeline</button>
         </div>
@@ -182,6 +183,10 @@ OMP.registerPage('crm', {
 
           <div class="ck-group" data-group="docs" hidden>
             ${docGate(s)}
+          </div>
+
+          <div class="ck-group" data-group="milestones" hidden>
+            ${milestonesBox(s)}
           </div>
 
           <div class="ck-group" data-group="people" hidden>
@@ -287,6 +292,25 @@ OMP.registerPage('crm', {
           if (marginAppliesVal && marginAppliesVal !== (s.marginApplies || 'pending')) await A.postUpdate({ type: 'margin', key: 'applies', value: marginAppliesVal, note: 'Margin applicable updated' });
           if (marginAppliesVal !== 'no' && marginPctVal) await A.postUpdate({ type: 'margin', key: 'pctOverride', value: marginPctVal, note: 'Margin % updated' });
           if (marginInvoiceStatusVal && marginInvoiceStatusVal !== (s.marginInvoiceStatus || 'not_raised')) await A.postUpdate({ type: 'margin', key: 'invoiceStatus', value: marginInvoiceStatusVal, note: 'Margin invoice status updated' });
+
+          // Milestones & Tracking — one 'detail' event per changed field
+          const detailFields = {
+            orderId: '#mOrderId', invoiceNo: '#mInvoiceNo', mmDate: '#mMmDate',
+            dispatchDate: '#mDispatchDate', distance: '#mDistance',
+            vehicleExpDate: '#mVehicleExpDate', vehicleActualDate: '#mVehicleActualDate', vehiclePortalDate: '#mVehiclePortalDate',
+            deliveredActualDate: '#mDeliveredActualDate', deliveredPortalDate: '#mDeliveredPortalDate',
+            dnStatus: '#mDnStatus', dnRemarks: '#mDnRemarks', completionDate: '#mCompletionDate',
+          };
+          for (const [key, sel] of Object.entries(detailFields)) {
+            const v = val(sel);
+            if (v && v !== (s[key] || '')) await A.postUpdate({ type: 'detail', key, value: v, note: 'Milestone updated' });
+          }
+          const checkFields = { unloaded: '#mUnloaded', podReceived: '#mPodReceived', paymentDoneConfirmed: '#mPaymentDoneConfirmed' };
+          for (const [key, sel] of Object.entries(checkFields)) {
+            const el2 = main.querySelector(sel);
+            const v = el2 && el2.checked ? 'yes' : 'no';
+            if (v !== (s[key] || 'no')) await A.postUpdate({ type: 'detail', key, value: v, note: 'Milestone updated' });
+          }
         };
       } else {
         main.querySelectorAll('.section-body button, .section-body input, .section-body select, .section-body textarea, #saveAll').forEach(x => x.disabled = true);
@@ -392,6 +416,31 @@ OMP.registerPage('crm', {
           <div class="form-row"><input id="buyerPocNote" type="text" placeholder="Log a new buyer POC contact…" /><button class="secondary-btn" id="saveBuyerPocLog">Log</button></div>
           <div><b class="sub">Seller POC (${esc(s.srPoc || '—')})</b>${fmtLog(s.lastSellerPocContact)}</div>
           <div class="form-row"><input id="sellerPocNote" type="text" placeholder="Log a new seller POC contact…" /><button class="secondary-btn" id="saveSellerPocLog">Log</button></div>
+        </div>
+      </div>`;
+    }
+
+    function milestonesBox(s) {
+      const d = k => esc(s[k] || '');
+      const t3 = v => v === 'yes';
+      return `<div class="section-box span-2">
+        <div class="section-title"><h3>Milestones &amp; Tracking</h3><span class="badge neutral">from the manual sheet</span></div>
+        <div class="section-body">
+          <p class="sub" style="margin:-2px 0 2px">Deal reference</p>
+          <div class="form-row"><input id="mOrderId" type="text" value="${d('orderId')}" placeholder="SO Number" /><input id="mInvoiceNo" type="text" value="${d('invoiceNo')}" placeholder="Invoice Number" /><input id="mMmDate" type="date" value="${d('mmDate')}" title="MM Date" /></div>
+          <p class="sub" style="margin:8px 0 2px">Dispatch</p>
+          <div class="form-row"><input id="mDispatchDate" type="date" value="${d('dispatchDate')}" title="Dispatch date" /><input id="mDistance" type="text" value="${d('distance')}" placeholder="Distance (km)" /></div>
+          <div class="form-row">
+            <label style="width:auto;display:flex;align-items:center;gap:5px"><input id="mUnloaded" type="checkbox" style="width:auto" ${t3(s.unloaded) ? 'checked' : ''}/> Unloaded</label>
+            <label style="width:auto;display:flex;align-items:center;gap:5px"><input id="mPodReceived" type="checkbox" style="width:auto" ${t3(s.podReceived) ? 'checked' : ''}/> POD received</label>
+            <label style="width:auto;display:flex;align-items:center;gap:5px"><input id="mPaymentDoneConfirmed" type="checkbox" style="width:auto" ${t3(s.paymentDoneConfirmed) ? 'checked' : ''}/> Payment done</label>
+          </div>
+          <p class="sub" style="margin:8px 0 2px">Vehicle reach tracking</p>
+          <div class="form-row"><input id="mVehicleExpDate" type="date" value="${d('vehicleExpDate')}" title="Expected" /><input id="mVehicleActualDate" type="date" value="${d('vehicleActualDate')}" title="Actual" /><input id="mVehiclePortalDate" type="date" value="${d('vehiclePortalDate')}" title="Portal-confirmed" /></div>
+          <p class="sub" style="margin:8px 0 2px">Delivered tracking</p>
+          <div class="form-row"><input id="mDeliveredActualDate" type="date" value="${d('deliveredActualDate')}" title="Actual" /><input id="mDeliveredPortalDate" type="date" value="${d('deliveredPortalDate')}" title="Portal-confirmed" /></div>
+          <p class="sub" style="margin:8px 0 2px">Debit Note &amp; completion</p>
+          <div class="form-row"><input id="mDnStatus" type="text" value="${d('dnStatus')}" placeholder="DN status" /><input id="mDnRemarks" type="text" value="${d('dnRemarks')}" placeholder="DN remarks" /><input id="mCompletionDate" type="date" value="${d('completionDate')}" title="Completion date" /></div>
         </div>
       </div>`;
     }
