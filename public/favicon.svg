@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <rect width="64" height="64" rx="14" fill="#eef4f0"/>
   <rect x="1" y="1" width="62" height="62" rx="13" fill="none" stroke="#0a5540" stroke-width="2"/>
-  <text x="32" y="40" text-anchor="middle" font-family="'JetBrains Mono', ui-monospace, monospace" font-weight="700" font-size="21" fill="#0a5540" letter-spacing="-1">OMP</text>
+  <text x="32" y="43" text-anchor="middle" font-family="'JetBrains Mono', ui-monospace, monospace" font-weight="700" font-size="30" fill="#0a5540" letter-spacing="-1.5">OMP</text>
 </svg>
