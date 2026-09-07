@@ -266,7 +266,13 @@ async function computeState() {
       }
       if (event.type === "doc") merged.docs[event.key] = event.value;
       if (event.type === "note") merged.remarks = event.value;
-      if (event.type === "owner") merged.controlPoc = event.value;
+      if (event.type === "owner") {
+        // key "payment" tracks a second, separate owner (who chases payment
+        // on this shipment) alongside the operational owner (controlPoc) —
+        // same event type, same value shape, just a parallel field.
+        if (event.key === "payment") merged.paymentOwner = event.value;
+        else merged.controlPoc = event.value;
+      }
       if (event.type === "qty" && event.key === "invoiceQty") merged.invoiceQty = event.value;
       if (event.type === "qty" && event.key === "receivedQty") merged.receivedQty = event.value;
       if (event.type === "payment_detail" && event.key === "tds") merged.tds = event.value;
@@ -327,6 +333,7 @@ async function computeState() {
     // Owner is controlPoc only — srPoc/brPoc are the buyer's/seller's own external contacts,
     // never our internal txn team, never a fallback "owner".
     const owner = String(merged.controlPoc || "Unassigned").trim();
+    const paymentOwner = String(merged.paymentOwner || "").trim();
     // Supplier margin: shipment-level override > standard 0.5% default. "No" locks it to 0.
     const marginApplies = merged.marginApplies || "pending";
     // `|| 0.5` would wrongly replace a genuine 0% override with the default
@@ -347,6 +354,7 @@ async function computeState() {
       ...merged,
       docs,
       owner,
+      paymentOwner,
       stageLabel: STAGE_LABELS[merged.funnel] || merged.stageRaw || "Unknown",
       requiredDocs: required,
       missingDocs,
@@ -570,22 +578,22 @@ const ACTIVE_TXN_TEAM = new Set([
   "Bharath Kumar", "Divya Boppuri", "Jithender Chitakodur", "Aishwarya Laxmi Karanam", "Aravind Jakkula",
 ]);
 
-// Only controlPoc (our internal txn-team executives) can be app users. srPoc/brPoc are
-// the buyer's and seller's own external contacts — never our agents, never a sign-in identity.
-function buildUsers(shipments) {
+// Payment-tracking specialist: assigned as paymentOwner on every shipment
+// (existing ones migrated in bulk, new ones auto-assigned at intake), while
+// staying out of the operational (controlPoc) auto-assign rotation below.
+// Anyone can still edit payment fields (canEditShipment isn't scoped by this)
+// — this only decides who a shipment defaults to for payment follow-up.
+const PAYMENT_OWNER = "Aishwarya Laxmi Karanam";
+
+// The active team is a fixed roster, not something discovered from shipment
+// data — so everyone in it (including a specialist like the payment owner,
+// who may hold zero operationally-owned shipments) always appears as a
+// selectable user, never disappears just because no shipment's controlPoc
+// currently names them.
+function buildUsers() {
   const users = [{ name: "Local Admin", email: "local@recykal.test", role: "admin", scope: "all" }];
-  const seen = new Set(users.map((u) => u.email));
-  for (const s of shipments) {
-    for (const raw of splitNames(s.controlPoc)) {
-      if (!raw) continue;
-      // Display the canonical name so a person appears once, under one spelling.
-      const name = canonicalName(raw);
-      if (!ACTIVE_TXN_TEAM.has(name)) continue;
-      const email = makeEmail(name);
-      if (seen.has(email)) continue;
-      users.push({ name, email, role: "associate", scope: "own" });
-      seen.add(email);
-    }
+  for (const name of ACTIVE_TXN_TEAM) {
+    users.push({ name, email: makeEmail(name), role: "associate", scope: "own" });
   }
   return users.sort((a, b) => (a.role === "admin" ? -1 : b.role === "admin" ? 1 : a.name.localeCompare(b.name)));
 }
@@ -593,9 +601,11 @@ function buildUsers(shipments) {
 // Balanced auto-assign for a new shipment with no owner typed in: whoever
 // currently has the fewest OPEN shipments gets it. Not buyer-based — deliberately,
 // so no single associate gets buried just because they handle one heavy buyer.
-// Admins are never assignment targets. Ties break alphabetically for determinism.
+// Admins and the payment specialist are never operational-assignment targets —
+// she gets every shipment as paymentOwner separately (see intake below), not
+// through this rotation. Ties break alphabetically for determinism.
 function pickLeastLoadedOwner(shipments, users) {
-  const candidates = users.filter((u) => u.role !== "admin");
+  const candidates = users.filter((u) => u.role !== "admin" && u.name !== PAYMENT_OWNER);
   if (!candidates.length) return "";
   const openCount = new Map(candidates.map((u) => [nameKey(u.name), 0]));
   for (const s of shipments) {
@@ -883,6 +893,9 @@ function validateUpdate(p) {
     if (!DOC_VALUES.has(p.value)) return { error: "invalid doc value" };
     out.key = p.key; out.value = p.value;
   } else if (type === "owner") {
+    // key "" = operational owner (controlPoc, default); key "payment" = the
+    // separate payment-tracking owner. See computeState()'s "owner" branch.
+    out.key = p.key === "payment" ? "payment" : "";
     const normalized = splitNames(p.value).map(canonicalName).join("/");
     out.value = clampStr(normalized, 120);
   } else if (type === "note") {
@@ -1149,6 +1162,7 @@ async function handleApi(req, res, url) {
       buyer,
       brPoc: clampStr(payload.brPoc, 100),
       controlPoc,
+      paymentOwner: PAYMENT_OWNER,
       month: new Date().toLocaleString("en-IN", { month: "long" }),
       invoiceNo: "", invoiceDate: "", dispatchDate: "", dueDate: "", paymentTerms: "", distance: "",
       stageRaw: "MM", funnel: "mm",
@@ -1194,7 +1208,8 @@ async function handleApi(req, res, url) {
     // the current active team in one pass. Each entry just appends a normal
     // "owner" event (same path a single manual reassignment takes), so the full
     // history stays intact in each shipment's timeline; nothing is overwritten in
-    // place. Body: { assignments: [{ shipmentId, owner }, ...] }.
+    // place. Body: { assignments: [{ shipmentId, owner, key? }, ...] } — key
+    // "payment" targets the payment owner instead of the operational one.
     if (authGateOn() && user.role !== "admin") return sendJson(res, { error: "Forbidden" }, 403);
     let payload;
     try {
@@ -1208,7 +1223,7 @@ async function handleApi(req, res, url) {
     let skipped = 0;
     for (const a of assignments) {
       const shipmentId = String((a && a.shipmentId) || "").trim();
-      const checked = shipmentId && knownIds.has(shipmentId) ? validateUpdate({ type: "owner", value: (a && a.owner) || "" }) : { error: "unknown shipment" };
+      const checked = shipmentId && knownIds.has(shipmentId) ? validateUpdate({ type: "owner", value: (a && a.owner) || "", key: (a && a.key) || "" }) : { error: "unknown shipment" };
       if (checked.error || !checked.value || !checked.value.value) { skipped++; continue; }
       const event = createEvent({ ...checked.value, shipmentId, actor: user.name, actorEmail: user.email });
       await store.addUpdate(event);

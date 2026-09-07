@@ -120,9 +120,14 @@ const OMP = (() => {
     return v;
   }
   const ranked = rows => [...rows].sort((a, b) => score(b) - score(a));
-  // Personal scope: the shipments this user can act on (own). Admin -> all.
-  // Used by the personal views (Overview, My Work); browse/analytics use all.
-  const myShipments = () => state.shipments.filter(s => s.canEdit);
+  // Loose name compare — same "does this string name this person" check used
+  // client-side wherever we can't call the server's canonicalName().
+  const nameEq = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+  // Personal scope: shipments this user is the (operational) owner of. Edit
+  // access is open to everyone now — this is a workload view, not a
+  // permission boundary — so it compares names, not the (always-true) canEdit
+  // flag. Admin -> all.
+  const myShipments = () => state.shipments.filter(s => nameEq(s.owner, state.user.name));
   const isScoped = () => state.user && state.user.role !== 'admin';
   function filtered() {
     const f = state.filters;
@@ -135,7 +140,10 @@ const OMP = (() => {
       if (f.risk === 'overdue' && s.paymentRisk !== 'overdue') return false;
       if (f.risk === 'proof' && !s.paidProofPending) return false;
       if (f.risk === 'unassigned' && s.controlPoc) return false;
-      if (f.risk === 'mine' && !s.canEdit) return false;
+      // canEdit is true for every associate now (edit access is open to all),
+      // so "mine" has to compare names directly, not the edit flag.
+      if (f.risk === 'mine' && !nameEq(s.owner, state.user.name)) return false;
+      if (f.risk === 'mine_payment' && !nameEq(s.paymentOwner, state.user.name)) return false;
       if (f.cause && s.cause !== f.cause) return false;
       return true;
     });

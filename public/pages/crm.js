@@ -41,6 +41,7 @@ OMP.registerPage('crm', {
               <select id="crmRisk">
                 <option value="">All shipments</option>
                 <option value="mine">My shipments</option>
+                <option value="mine_payment">My payment follow-ups</option>
                 <option value="needs">Needs action</option>
                 <option value="docs">Docs pending</option>
                 <option value="proof">Paid · proof pending</option>
@@ -149,6 +150,7 @@ OMP.registerPage('crm', {
         <div style="padding:14px 16px;border-bottom:1px solid var(--line-soft)">${stepper(s)}</div>
         <div class="detail-grid">
           ${detail('Owner', s.owner || 'Unassigned')}
+          ${detail('Payment owner', s.paymentOwner || 'Unassigned')}
           ${detail('Stage', s.stageLabel)}
           ${detail('Paid', money('paidAmount'), true)}
           ${detail('Balance', money('balance'), true)}
@@ -205,6 +207,8 @@ OMP.registerPage('crm', {
               <div class="section-body">
                 <input id="ownerUpdate" type="text" value="${esc(s.controlPoc || '')}" placeholder="Owner / Control POC" list="ownerOptionsList" />
                 <datalist id="ownerOptionsList">${(state.ownerOptions||[]).map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
+                <p class="sub" style="margin:8px 0 2px">Payment owner — tracks GST/TDS/margin follow-up on this shipment. Anyone can still update payment fields; this is just who it defaults to.</p>
+                <input id="paymentOwnerUpdate" type="text" value="${esc(s.paymentOwner || '')}" placeholder="Payment owner" list="ownerOptionsList" />
               </div>
             </div>
             ${pocLogBox(s)}
@@ -284,6 +288,7 @@ OMP.registerPage('crm', {
           const stageVal = val('#stageUpdate'), reasonVal = val('#stageReason'), stageNote = val('#stageNote');
           const issueVal = val('#issueType');
           const ownerVal = (val('#ownerUpdate') || '').trim();
+          const paymentOwnerVal = (val('#paymentOwnerUpdate') || '').trim();
           const invQty = val('#invoiceQtyInput'), recQty = val('#receivedQtyInput');
           const tdsVal = val('#tdsInput');
           const invDate = val('#invoiceDateInput'), terms = val('#paymentTermsInput'), dueDate = val('#dueDateInput');
@@ -294,6 +299,7 @@ OMP.registerPage('crm', {
           else if (reasonVal !== (s.blockReason || '') || stageNote) await A.postUpdate({ type: 'stage', value: s.funnel, reason: reasonVal, note: stageNote });
           if (issueVal) await A.postUpdate({ type: 'issue', value: issueVal, note: 'Issue tagged' });
           if (ownerVal && ownerVal !== (s.controlPoc || '')) await A.postUpdate({ type: 'owner', value: ownerVal, note: 'Owner updated' });
+          if (paymentOwnerVal && paymentOwnerVal !== (s.paymentOwner || '')) await A.postUpdate({ type: 'owner', key: 'payment', value: paymentOwnerVal, note: 'Payment owner updated' });
           if (invQty) await A.postUpdate({ type: 'qty', key: 'invoiceQty', value: invQty, note: 'Invoice qty updated' });
           if (recQty) await A.postUpdate({ type: 'qty', key: 'receivedQty', value: recQty, note: 'Received qty updated' });
           if (tdsVal) await A.postUpdate({ type: 'payment_detail', key: 'tds', value: tdsVal, note: 'TDS updated' });
