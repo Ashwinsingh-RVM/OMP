@@ -1232,6 +1232,42 @@ async function handleApi(req, res, url) {
     invalidateState();
     return sendJson(res, { ok: true, applied, skipped, totalSent: assignments.length });
   }
+  if (req.method === "GET" && url.pathname === "/api/admin/run-team-split") {
+    // One-time (but safe to re-run) migration: computes and applies the
+    // buyer-affinity + balanced split across the 4 operational associates,
+    // and sets the payment owner on every shipment, in one visit — no request
+    // body needed, so opening this URL while logged in as an admin is enough.
+    // Remove this route once the migration it exists for is done.
+    if (authGateOn() && user.role !== "admin") return sendJson(res, { error: "Forbidden" }, 403);
+    const opsTeam = [...ACTIVE_TXN_TEAM].filter((n) => n !== PAYMENT_OWNER);
+    const groups = new Map();
+    for (const s of state.shipments) {
+      const key = String(s.buyer || "").trim().toLowerCase();
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(s.shipmentId);
+    }
+    const order = [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
+    const load = new Map(opsTeam.map((n) => [n, 0]));
+    let opsApplied = 0;
+    let paymentApplied = 0;
+    for (const [, ids] of order) {
+      let best = opsTeam[0];
+      for (const n of opsTeam) if (load.get(n) < load.get(best) || (load.get(n) === load.get(best) && n < best)) best = n;
+      load.set(best, load.get(best) + ids.length);
+      for (const shipmentId of ids) {
+        const checked = validateUpdate({ type: "owner", value: best });
+        await store.addUpdate(createEvent({ ...checked.value, shipmentId, actor: user.name, actorEmail: user.email }));
+        opsApplied++;
+      }
+    }
+    for (const s of state.shipments) {
+      const checked = validateUpdate({ type: "owner", value: PAYMENT_OWNER, key: "payment" });
+      await store.addUpdate(createEvent({ ...checked.value, shipmentId: s.shipmentId, actor: user.name, actorEmail: user.email }));
+      paymentApplied++;
+    }
+    invalidateState();
+    return sendJson(res, { ok: true, opsApplied, paymentApplied, opsLoad: Object.fromEntries(load) });
+  }
   if (req.method === "GET" && url.pathname === "/api/admin/activity") {
     // Deliberately narrower than the other admin-* routes: gated to one named
     // person, not "any admin" — see ACTIVITY_OWNER_EMAIL.
