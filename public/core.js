@@ -244,17 +244,22 @@ const OMP = (() => {
   }
 
   /* ── view / render orchestration ── */
-  // Associates only see the day-to-day work surfaces; the analytics/management tabs
-  // (Why Pending, Trends, Stage Aging, Pipeline Health, Owner Performance, Finance)
-  // are admin-only — same tabs exist for everyone server-side, this just keeps them
-  // out of an associate's way.
+  // Three tiers of tab, gated purely for UI convenience (every route is still
+  // gated server-side): "staff" tabs (analytics/dashboards) are open to any
+  // signed-in associate or admin; "admin" tabs (Team & PINs) need the admin
+  // role; "owner" tabs (Activity) are restricted further, to one specific
+  // person regardless of role — see OWNER_EMAIL below.
+  const OWNER_EMAIL = 'ashwin.singh@recykal.com';
   function applyRoleTabVisibility() {
-    const isAdmin = state.user.role === 'admin';
-    document.querySelectorAll('.view-tab[data-admin]').forEach(b => b.hidden = !isAdmin);
-    if (!isAdmin) {
-      const activeAdminTab = document.querySelector('.view-tab.active[data-admin]');
-      if (activeAdminTab) setView('overview');
-    }
+    const role = state.user.role;
+    const isStaff = role === 'admin' || role === 'associate';
+    const isAdmin = role === 'admin';
+    const isOwner = String(state.user.email || '').toLowerCase() === OWNER_EMAIL;
+    document.querySelectorAll('.view-tab[data-tier="staff"]').forEach(b => b.hidden = !isStaff);
+    document.querySelectorAll('.view-tab[data-tier="admin"]').forEach(b => b.hidden = !isAdmin);
+    document.querySelectorAll('.view-tab[data-tier="owner"]').forEach(b => b.hidden = !isOwner);
+    const activeHidden = document.querySelector('.view-tab.active[hidden]');
+    if (activeHidden) setView('overview');
   }
   function setView(view) {
     state.view = view;

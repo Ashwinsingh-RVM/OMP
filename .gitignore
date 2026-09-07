@@ -7,3 +7,5 @@ npm-debug.log*
 
 # PIN scrypt hashes (local JSON store) - never commit
 data/pins.json
+# Runtime login log (local JSON store) - not seed data
+data/login_events.json

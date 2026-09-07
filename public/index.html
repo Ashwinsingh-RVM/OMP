@@ -34,13 +34,14 @@
     <button class="view-tab" data-view="work">My Work</button>
     <button class="view-tab" data-view="crm">Shipment CRM</button>
     <button class="view-tab" data-view="pipeline">Pipeline</button>
-    <button class="view-tab" data-view="insights" data-admin="1">Why Pending</button>
-    <button class="view-tab" data-view="trends" data-admin="1">Trends</button>
-    <button class="view-tab" data-view="aging" data-admin="1">Stage Aging</button>
-    <button class="view-tab" data-view="pipehealth" data-admin="1">Pipeline Health</button>
-    <button class="view-tab" data-view="owners" data-admin="1">Owner Performance</button>
-    <button class="view-tab" data-view="finance" data-admin="1">Finance</button>
-    <button class="view-tab" data-view="team" data-admin="1">Team &amp; PINs</button>
+    <button class="view-tab" data-view="insights" data-tier="staff">Why Pending</button>
+    <button class="view-tab" data-view="trends" data-tier="staff">Trends</button>
+    <button class="view-tab" data-view="aging" data-tier="staff">Stage Aging</button>
+    <button class="view-tab" data-view="pipehealth" data-tier="staff">Pipeline Health</button>
+    <button class="view-tab" data-view="owners" data-tier="staff">Owner Performance</button>
+    <button class="view-tab" data-view="finance" data-tier="staff">Finance</button>
+    <button class="view-tab" data-view="team" data-tier="admin">Team &amp; PINs</button>
+    <button class="view-tab" data-view="activity" data-tier="owner">Activity</button>
   </nav>
 
   <main class="page">
@@ -55,6 +56,7 @@
     <section class="page-view" id="view-owners"></section>
     <section class="page-view" id="view-finance"></section>
     <section class="page-view" id="view-team"></section>
+    <section class="page-view" id="view-activity"></section>
   </main>
 
   <div class="toast-wrap" id="toastWrap"></div>
@@ -72,6 +74,7 @@
   <script src="/pages/owners.js"></script>
   <script src="/pages/finance.js"></script>
   <script src="/pages/team.js"></script>
+  <script src="/pages/activity.js"></script>
   <script src="/boot.js"></script>
 </body>
 </html>

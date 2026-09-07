@@ -27,6 +27,9 @@ function authGateOn() {
 const IS_DEPLOYED = Boolean(process.env.HOST || authGateOn() || process.env.DATABASE_URL || process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === "production");
 
 const store = getStore();
+// The Activity tab (logins + who-updated-what across every shipment) is
+// restricted to this one person specifically — not just any admin.
+const ACTIVITY_OWNER_EMAIL = "ashwin.singh@recykal.com";
 
 // --- In-memory rate limiting (per client IP) --------------------------------
 // Global sliding window: max RATE_MAX requests per RATE_WINDOW_MS. Plus a much
@@ -763,6 +766,7 @@ async function handleDirectLogin(req, res, ip) {
   // The PIN *was* the credential here, so the session starts already past the
   // PIN gate — there is no second factor still to clear.
   auth.issueSession(req, res, { email, name: email, pinAt: Date.now() });
+  store.addLoginEvent({ email, createdAt: new Date().toISOString() }).catch(() => {});
   return sendJson(res, { ok: true });
 }
 
@@ -811,9 +815,12 @@ function scopeShipments(shipments, user) {
 // Read model: an associate can SEE all shipments; EDIT only the ones assigned to
 // them (their name is a Control/SR/BR POC). Admin edits all; guest edits nothing.
 function canEditShipment(shipment, user) {
+  // Every signed-in associate can edit any shipment, not just ones assigned
+  // to them — assignment is now a filter/workload view (see "My shipments"
+  // in the CRM), not an edit boundary. Only a guest (unrecognized identity)
+  // is locked out.
   if (!user || user.role === "guest") return false;
-  if (user.role === "admin") return true;
-  return shipmentNames(shipment).includes(nameKey(user.name));
+  return true;
 }
 // Optional shared-password gate for deployed instances. When APP_PASSWORD is set
 // (e.g. on Railway) every request needs HTTP Basic Auth. In local dev it is unset,
@@ -1209,6 +1216,34 @@ async function handleApi(req, res, url) {
     }
     invalidateState();
     return sendJson(res, { ok: true, applied, skipped, totalSent: assignments.length });
+  }
+  if (req.method === "GET" && url.pathname === "/api/admin/activity") {
+    // Deliberately narrower than the other admin-* routes: gated to one named
+    // person, not "any admin" — see ACTIVITY_OWNER_EMAIL.
+    if (authGateOn() && String(user.email || "").toLowerCase() !== ACTIVITY_OWNER_EMAIL) {
+      return sendJson(res, { error: "Forbidden" }, 403);
+    }
+    const [logins, updates] = await Promise.all([store.getLoginEvents(), store.getUpdates()]);
+    const idToShipment = new Map(state.shipments.map((s) => [s.shipmentId, s]));
+    const loginFeed = logins
+      .map((e) => ({ kind: "login", email: e.email, at: e.createdAt }))
+      .sort((a, b) => String(b.at).localeCompare(String(a.at)))
+      .slice(0, 200);
+    const updateFeed = updates
+      .map((e) => ({
+        kind: "update",
+        type: e.type,
+        key: e.key,
+        value: typeof e.value === "string" ? e.value : "",
+        actor: e.actor,
+        actorEmail: e.actorEmail,
+        shipmentId: e.shipmentId,
+        buyer: (idToShipment.get(e.shipmentId) || {}).buyer || "",
+        at: e.createdAt,
+      }))
+      .sort((a, b) => String(b.at).localeCompare(String(a.at)))
+      .slice(0, 300);
+    return sendJson(res, { ok: true, logins: loginFeed, updates: updateFeed });
   }
   return sendJson(res, { error: "Not found" }, 404);
 }

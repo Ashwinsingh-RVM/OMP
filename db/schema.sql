@@ -58,3 +58,12 @@ CREATE TABLE IF NOT EXISTS pins (
   set_by      TEXT DEFAULT '',
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Successful sign-ins only (failed attempts are handled by the in-memory
+-- lockout in server.js, not logged here). Feeds the admin-only Activity tab.
+CREATE TABLE IF NOT EXISTS login_events (
+  id          UUID PRIMARY KEY,
+  email       TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_login_events_created_at ON login_events (created_at);

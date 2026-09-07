@@ -14,6 +14,7 @@
  */
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
 const ROOT = path.join(__dirname, "..");
 const DATA = path.join(ROOT, "data");
@@ -21,6 +22,7 @@ const SHIPMENTS_FILE = path.join(DATA, "shipments.json");
 const UPDATES_FILE = path.join(DATA, "updates.json");
 // Holds scrypt hashes only, never a PIN. Gitignored regardless.
 const PINS_FILE = path.join(DATA, "pins.json");
+const LOGIN_EVENTS_FILE = path.join(DATA, "login_events.json");
 
 function readJson(file, fallback) {
   try {
@@ -91,6 +93,15 @@ function createJsonStore() {
     },
     async listPinEmails() {
       return Object.keys(readJson(PINS_FILE, { pins: {} }).pins || {});
+    },
+    async addLoginEvent(record) {
+      const current = readJson(LOGIN_EVENTS_FILE, { events: [] });
+      current.events = current.events || [];
+      current.events.push(record);
+      writeJson(LOGIN_EVENTS_FILE, current);
+    },
+    async getLoginEvents() {
+      return readJson(LOGIN_EVENTS_FILE, { events: [] }).events || [];
     },
   };
 }
@@ -252,6 +263,21 @@ function createPgStore() {
       await ensureReady();
       const { rows } = await pool.query("SELECT email FROM pins ORDER BY email");
       return rows.map((r) => r.email);
+    },
+    async addLoginEvent(record) {
+      await ensureReady();
+      await pool.query(
+        "INSERT INTO login_events (id, email, created_at) VALUES ($1,$2,$3)",
+        [crypto.randomUUID(), String(record.email || "").toLowerCase(), record.createdAt || new Date().toISOString()]
+      );
+    },
+    async getLoginEvents() {
+      await ensureReady();
+      const { rows } = await pool.query("SELECT email, created_at FROM login_events ORDER BY created_at DESC LIMIT 500");
+      return rows.map((r) => ({
+        email: r.email,
+        createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at || ""),
+      }));
     },
   };
 }
