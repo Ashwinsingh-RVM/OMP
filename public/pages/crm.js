@@ -30,7 +30,7 @@ OMP.registerPage('crm', {
               <div class="form-row"><input id="nsQty" type="number" placeholder="Qty (kg)" /><input id="nsValue" type="number" placeholder="Material value (₹)" /></div>
               <input id="nsControlPoc" type="text" placeholder="Owner / Control POC" list="ownerOptionsListNew" />
               <datalist id="ownerOptionsListNew">${(state.ownerOptions||[]).map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
-              <button class="primary-btn" id="nsCreate">Create shipment</button>
+              <div class="form-row"><button class="primary-btn" id="nsCreate">Create shipment</button><button class="secondary-btn" id="nsCancel">Cancel</button></div>
               <p class="sub" id="nsError" style="color:var(--bad);display:none"></p>
             </div>
           </div>
@@ -55,7 +55,10 @@ OMP.registerPage('crm', {
       </div>`;
 
     // New Shipment — only the ID is auto-generated, everything else is typed in here
-    el.querySelector('#newShipmentBtn').onclick = () => el.querySelector('#newShipmentBox').classList.toggle('collapsed');
+    const nsBox = el.querySelector('#newShipmentBox');
+    el.querySelector('#newShipmentBtn').onclick = () => nsBox.classList.toggle('collapsed');
+    el.querySelector('#newShipmentBox .section-title').onclick = () => nsBox.classList.toggle('collapsed');
+    el.querySelector('#nsCancel').onclick = () => nsBox.classList.add('collapsed');
     el.querySelector('#nsCreate').onclick = async (e) => {
       const btn = e.currentTarget;
       if (btn.disabled) return; // double-click guard — avoid firing two creates
