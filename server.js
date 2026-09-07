@@ -556,6 +556,17 @@ function makeEmail(name) {
   return nameKey(name).replace(/[^a-z0-9]+/g, ".").replace(/^\.|\.$/g, "") + "@local.associate";
 }
 
+// The real, currently-active txn team — only these 5 people have a work email +
+// PIN and can actually sign in (see auth/roster.json AUTH_USERS). Every other
+// controlPoc spelling seen in the historical seed data (Kalyan, Naveen, Megharaj B,
+// Rajeshwari Sunnapu, Arijit Dutta, ...) is a past/inactive name: it still shows
+// correctly as the owner on old shipments, but is NOT a selectable identity and
+// NOT an auto-assign candidate — only real people who can act on a shipment today
+// should ever be offered as one.
+const ACTIVE_TXN_TEAM = new Set([
+  "Bharath Kumar", "Divya Boppuri", "Jithender Chitakodur", "Aishwarya Laxmi Karanam", "Aravind Jakkula",
+]);
+
 // Only controlPoc (our internal txn-team executives) can be app users. srPoc/brPoc are
 // the buyer's and seller's own external contacts — never our agents, never a sign-in identity.
 function buildUsers(shipments) {
@@ -566,6 +577,7 @@ function buildUsers(shipments) {
       if (!raw) continue;
       // Display the canonical name so a person appears once, under one spelling.
       const name = canonicalName(raw);
+      if (!ACTIVE_TXN_TEAM.has(name)) continue;
       const email = makeEmail(name);
       if (seen.has(email)) continue;
       users.push({ name, email, role: "associate", scope: "own" });

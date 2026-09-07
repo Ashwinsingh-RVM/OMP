@@ -29,31 +29,39 @@
   ],
 
   "AUTH_USERS": {
-    "aishwarya.karanam@recykal.com": "aishwarya.laxmi.karanam@local.associate",
-    "aravind.jakkula@recykal.com": "aravind.jakkula@local.associate",
     "invoicing20@recykal.com": "bharath.kumar@local.associate",
     "divya.boppuri@recykal.com": "divya.boppuri@local.associate",
     "jithender.chitakodur@recykal.com": "jithender.chitakodur@local.associate",
-    "invoicing04@recykal.com": "megharaj.b@local.associate",
-    "rajeshwari.sunnapu@recykal.com": "rajeshwari.sunnapu@local.associate"
+    "aishwarya.karanam@recykal.com": "aishwarya.laxmi.karanam@local.associate",
+    "aravind.jakkula@recykal.com": "aravind.jakkula@local.associate"
   },
 
+  "_ONLY_THESE_5": [
+    "Confirmed by the user 2026-09-07: exactly these 5 people are the real, active",
+    "txn team — no one else. server.js's ACTIVE_TXN_TEAM allowlist (buildUsers())",
+    "now filters every OTHER controlPoc spelling in the historical seed data",
+    "(Kalyan, Naveen, Megharaj B, Rajeshwari Sunnapu, Arijit Dutta, Atharva Sudhir",
+    "Patil, Ashish Kumar Rai, Adarsh Krishnan, Arghyadeep Samanta) out of the",
+    "sign-in roster, the owner dropdown, and auto-assign — those names still",
+    "display correctly as the recorded owner on old shipments, they just aren't",
+    "selectable/assignable going forward. If any of them are actually still",
+    "active, add their real email here AND their canonical name to",
+    "ACTIVE_TXN_TEAM in server.js — the two lists must stay in sync."
+  ],
+
   "_OWNERSHIP_AFTER_ALIAS_MERGE": {
-    "_note": "Shipments each associate can EDIT (all 26 users can READ all 130).",
-    "megharaj.b": 17,
+    "_note": "Shipments each of these 5 can EDIT (all users can READ all 130).",
     "jithender.chitakodur": 12,
     "aishwarya.laxmi.karanam": 10,
     "aravind.jakkula": 10,
     "bharath.kumar": 7,
-    "divya.boppuri": 7,
-    "rajeshwari.sunnapu": 7
+    "divya.boppuri": 7
   },
 
   "_OPEN_QUESTION": [
-    "invoicing20@recykal.com (Bharath Kumar) and invoicing04@recykal.com",
-    "(Megharaj B) look like shared invoicing mailboxes rather than personal",
-    "addresses. Audit rows will name them, so two people acting as one is",
-    "indistinguishable after the fact. Swap for personal @recykal.com addresses",
-    "if they exist."
+    "invoicing20@recykal.com (Bharath Kumar) looks like a shared invoicing",
+    "mailbox rather than a personal address. Audit rows will name it, so if",
+    "more than one person acts through it, that's indistinguishable after the",
+    "fact. Swap for a personal @recykal.com address if one exists."
   ]
 }
