@@ -557,8 +557,8 @@ function canonicalName(value) {
 }
 
 // Identity key for a POC name. Aliasing lives here so every consumer —
-// makeEmail (user identity), shipmentNames + scopeShipments + canEditShipment
-// (ownership) — agrees on who a name belongs to.
+// makeEmail (user identity), pickLeastLoadedOwner (auto-assign) — agrees on
+// who a name belongs to.
 function nameKey(value) {
   return canonicalName(value).toLowerCase();
 }
@@ -811,19 +811,9 @@ function resolveUser(req, url, shipments) {
   return { name: "Guest", email: "guest", role: "guest", scope: "none" };
 }
 
-// Ownership/edit-scope is controlPoc only — same reasoning as buildUsers() above.
-function shipmentNames(shipment) {
-  return splitNames(shipment.controlPoc).map(nameKey);
-}
-
-function scopeShipments(shipments, user) {
-  if (!user || user.role === "admin") return shipments;
-  const key = nameKey(user.name);
-  return shipments.filter((s) => shipmentNames(s).includes(key));
-}
-
-// Read model: an associate can SEE all shipments; EDIT only the ones assigned to
-// them (their name is a Control/SR/BR POC). Admin edits all; guest edits nothing.
+// Read model: every signed-in associate/admin can SEE and EDIT all shipments
+// (owner is a workload/filter concept now, not a permission boundary — see
+// "My shipments" in the CRM). Only a guest (unrecognized identity) is locked out.
 function canEditShipment(shipment, user) {
   // Every signed-in associate can edit any shipment, not just ones assigned
   // to them — assignment is now a filter/workload view (see "My shipments"

@@ -13,6 +13,21 @@ OMP.registerPage('finance', {
     const paidCount = rows.filter(s => s.paymentDerived === 'paid').length;
     const tdsCount = rows.filter(s => s.tds != null).length;
 
+    // Shipments backfilled from the lighter operational sheet tab have no
+    // financial columns at all — every total above silently excludes them.
+    // Surface that instead of letting the numbers look like full coverage.
+    const withFinancials = rows.filter(s => H.num(s.materialValue) > 0).length;
+    const missingFinancials = total - withFinancials;
+
+    const byPaymentOwner = {};
+    rows.forEach(s => {
+      const owner = s.paymentOwner || 'Unassigned';
+      const e = byPaymentOwner[owner] = byPaymentOwner[owner] || { owner, shipments: 0, materialValue: 0, paid: 0, balance: 0 };
+      e.shipments++; e.materialValue += H.num(s.materialValue); e.balance += H.num(s.balance);
+      if (s.paymentDerived === 'paid') e.paid++;
+    });
+    const paymentOwners = Object.values(byPaymentOwner).sort((a, b) => b.materialValue - a.materialValue);
+
     const bySeller = {};
     rows.forEach(s => {
       const sel = s.seller || 'Unknown';
@@ -23,6 +38,10 @@ OMP.registerPage('finance', {
       .map(s => ({ ...s, estMargin: s.materialValue * 0.005 }));
 
     el.innerHTML = `
+      ${missingFinancials > 0 ? `<p class="sub" style="margin:0 0 12px;padding:9px 12px;background:var(--warn-soft);color:var(--warn);border-radius:var(--r-sm)">
+        ⚠ ${missingFinancials} of ${total} shipments (${Math.round(missingFinancials / total * 100)}%) have no material value / GST / payment data on file —
+        every total below only reflects the ${withFinancials} shipments that do. Not a full picture of the book yet.
+      </p>` : ''}
       <section class="kpi-strip" style="--kpi-cols:4">
         <article class="kpi done"><div class="kpi-head"><span class="kpi-k">Material cost paid</span></div><div class="kpi-v">${materialPaidCount}<small>of ${total}</small></div><div class="kpi-note">The main check — paid amount covers material value</div></article>
         <article class="kpi money"><div class="kpi-head"><span class="kpi-k">Total material value</span></div><div class="kpi-v" style="font-size:20px">${H.shortMoney(totalMaterial)}</div><div class="kpi-note">Across all ${total} shipments</div></article>
@@ -39,6 +58,17 @@ OMP.registerPage('finance', {
           <div class="detail num" style="flex:1;min-width:130px"><span>= Net payable</span><b>${H.shortMoney(totalNetPayable)}</b></div>
           <div class="detail num" style="flex:1;min-width:130px"><span>Actually paid</span><b>${H.shortMoney(totalPaid)}</b></div>
         </div>
+      </section>
+
+      <section class="card" style="margin-top:16px">
+        <div class="card-head"><div><h2>By payment owner</h2><p>Who's tracking payment follow-up on what</p></div></div>
+        <table class="data-table">
+          <thead><tr><th>Payment owner</th><th class="num">Shipments</th><th class="num">Material value</th><th class="num">Paid</th><th class="num">Balance open</th></tr></thead>
+          <tbody>${paymentOwners.map(o => `
+            <tr><td>${H.esc(o.owner)}</td><td class="num">${o.shipments}</td>
+            <td class="num">${H.shortMoney(o.materialValue)}</td><td class="num">${o.paid} of ${o.shipments}</td>
+            <td class="num">${H.shortMoney(o.balance)}</td></tr>`).join('')}</tbody>
+        </table>
       </section>
 
       <section class="card" style="margin-top:16px">

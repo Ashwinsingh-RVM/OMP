@@ -46,14 +46,16 @@ OMP.registerPage('trends', {
 
     // time buckets (windowed by range)
     const map = new Map();
-    let dated = 0, minD = null, maxD = null;
+    let dated = 0, minD = null, maxD = null, gmvDated = 0;
     for (const s of state.shipments) {
       const d = parseDate(s.dispatchDate); if (!d) continue;
       if (cutoff && d < cutoff) continue;
       dated++; if (!minD || d < minD) minD = d; if (!maxD || d > maxD) maxD = d;
       const b = bucket(d, gran);
       const row = map.get(b.key) || { key: b.key, label: b.label, count: 0, gmv: 0 };
-      row.count++; row.gmv += H.num(s.total || s.materialValue); map.set(b.key, row);
+      const v = H.num(s.total || s.materialValue);
+      if (v > 0) gmvDated++;
+      row.count++; row.gmv += v; map.set(b.key, row);
     }
     const buckets = (minD && maxD ? stepPeriods(minD, maxD, gran) : []).map(p => map.get(p.key) || { key: p.key, label: p.label, count: 0, gmv: 0 });
     const max = Math.max(...buckets.map(b => b.count), 1);
@@ -80,7 +82,7 @@ OMP.registerPage('trends', {
         <article class="kpi done"><div class="kpi-head"><span class="kpi-k">Total transactions</span><span class="kpi-meta">${range === 'all' ? 'all time' : 'last ' + RANGE_DAYS[range] + 'd'}</span></div><div class="kpi-v">${dated}</div><div class="kpi-note">Dispatched in this window</div></article>
         <article class="kpi money"><div class="kpi-head"><span class="kpi-k">Latest ${granLabel}</span><span class="kpi-meta">${latest.label}</span></div><div class="kpi-v">${latest.count}<small style="color:${chg >= 0 ? 'var(--ok)' : 'var(--bad)'}">${chg >= 0 ? '▲' : '▼'} ${Math.abs(chg)}%</small></div><div class="kpi-note">vs previous ${granLabel}</div></article>
         <article class="kpi today"><div class="kpi-head"><span class="kpi-k">Peak ${granLabel}</span><span class="kpi-meta">${peak ? peak.label : '—'}</span></div><div class="kpi-v">${peak ? peak.count : 0}</div><div class="kpi-note">Busiest ${granLabel} in range</div></article>
-        <article class="kpi docs"><div class="kpi-head"><span class="kpi-k">Window GMV</span></div><div class="kpi-v" style="font-size:22px;margin-top:5px">${H.shortMoney(windowGmv)}</div><div class="kpi-note">Value dispatched in range</div></article>
+        <article class="kpi docs"><div class="kpi-head"><span class="kpi-k">Window GMV</span></div><div class="kpi-v" style="font-size:22px;margin-top:5px">${H.shortMoney(windowGmv)}</div><div class="kpi-note">${gmvDated < dated ? `Only ${gmvDated} of ${dated} shipments have value data — undercounts the rest` : 'Value dispatched in range'}</div></article>
       </div>
       <section class="card">
         <div class="card-head">
