@@ -5,6 +5,7 @@ const crypto = require("crypto");
 const { getStore } = require("./db/store");
 const auth = require("./auth/session");
 const pin = require("./auth/pin");
+const fields = require("./lib/fields");
 
 const ROOT = __dirname;
 const PUBLIC = path.join(ROOT, "public");
@@ -101,15 +102,19 @@ const MIME = {
 };
 
 const STAGE_ORDER = ["mm", "predispatch", "intransit", "reached", "qc", "completed", "rejected"];
+// Stage keys are stored data and never change; the labels are the names the
+// team uses for each step of a truck's journey.
 const STAGE_LABELS = {
-  mm: "Match Making",
-  predispatch: "Pre-Dispatch",
-  intransit: "In-Transit",
-  reached: "Vehicle Reached",
-  qc: "Quality Check",
-  completed: "Completed",
+  mm: "Draft",
+  predispatch: "Dispatched",
+  intransit: "In Transit",
+  reached: "Reached",
+  qc: "Delivery",
+  completed: "Payment",
   rejected: "Rejected",
 };
+// Stage event reason meaning "nothing is blocking" — clears any logged blocker.
+const ON_TRACK = "on_track";
 const DOC_LABELS = {
   buyerPO: "Buyer PO",
   vehImages: "Vehicle Images",
@@ -252,6 +257,11 @@ async function computeState() {
     const openFollowUps = events.filter((event) => event.type === "followup" && event.status !== "done" && event.dueDate);
     const latestFollowUp = openFollowUps.length ? openFollowUps[openFollowUps.length - 1] : null;
     let merged = { ...row, docs: { ...(row.docs || {}) } };
+    // Manual values typed over an auto column, and every column changed in the
+    // CRM since import — both feed fields.computeAuto() below.
+    const crm = {};
+    const touched = new Set();
+    let lastComment = null;
     for (const event of events) {
       if (event.type === "stage") {
         // Only reset the aging clock when the stage genuinely changes — logging a
@@ -262,10 +272,24 @@ async function computeState() {
         merged.funnel = event.value;
         if (event.value === "completed" || event.value === "rejected") merged.blockReason = "";
         if (event.value === "rejected" && event.reason) merged.rejectionReason = event.reason;
-        if (event.reason) merged.blockReason = event.reason;
+        if (event.reason === ON_TRACK) merged.blockReason = "";
+        else if (event.reason) merged.blockReason = event.reason;
+        if (event.note) lastComment = { text: event.note, actor: event.actor, at: event.createdAt };
+      }
+      if (event.type === "field") {
+        if (fields.AUTO_KEYS.includes(event.key)) {
+          if (event.value === "") delete crm[event.key];
+          else crm[event.key] = event.value;
+        } else {
+          merged[event.key] = event.value;
+        }
+        touched.add(event.key);
       }
       if (event.type === "doc") merged.docs[event.key] = event.value;
-      if (event.type === "note") merged.remarks = event.value;
+      if (event.type === "note") {
+        merged.remarks = event.value;
+        lastComment = { text: event.value, actor: event.actor, at: event.createdAt };
+      }
       if (event.type === "owner") {
         // key "payment" tracks a second, separate owner (who chases payment
         // on this shipment) alongside the operational owner (controlPoc) —
@@ -273,16 +297,20 @@ async function computeState() {
         if (event.key === "payment") merged.paymentOwner = event.value;
         else merged.controlPoc = event.value;
       }
-      if (event.type === "qty" && event.key === "invoiceQty") merged.invoiceQty = event.value;
-      if (event.type === "qty" && event.key === "receivedQty") merged.receivedQty = event.value;
-      if (event.type === "payment_detail" && event.key === "tds") merged.tds = event.value;
+      // Older event types, from before every column became a "field" event.
+      if (event.type === "qty" && event.key === "invoiceQty") { merged.invoiceQty = event.value; touched.add("invoiceQty"); }
+      if (event.type === "qty" && event.key === "receivedQty") { merged.receivedQty = event.value; touched.add("receivedQty"); }
+      if (event.type === "payment_detail" && event.key === "tds") { merged.tds = event.value; crm.itTds = event.value; touched.add("itTds"); }
       if (event.type === "issue") merged.issueType = event.value;
-      if (event.type === "invoice_detail") merged[event.key] = event.value;
-      if (event.type === "detail") merged[event.key] = event.value;
+      if (event.type === "invoice_detail" && event.key === "dueDate") crm.dueDate = event.value;
+      else if (event.type === "invoice_detail") { merged[event.key] = event.value; touched.add(event.key); }
+      if (event.type === "detail") { merged[event.key] = event.value; touched.add(event.key); }
       if (event.type === "margin" && event.key === "applies") merged.marginApplies = event.value;
       if (event.type === "margin" && event.key === "pctOverride") merged.marginPctOverride = event.value;
       if (event.type === "margin" && event.key === "invoiceStatus") merged.marginInvoiceStatus = event.value;
     }
+    const auto = fields.computeAuto(merged, row, crm, touched);
+    for (const [key, value] of Object.entries(auto.values)) merged[key] = value === null ? "" : value;
     const docs = {
       buyerPO: normalizeDoc(merged.docs.buyerPO),
       vehImages: normalizeDoc(merged.docs.vehImages),
@@ -321,7 +349,7 @@ async function computeState() {
       };
     })();
     const dispatchAge = daysSince(merged.dispatchDate);
-    const stageAge = daysSince(merged.stageEnteredAt || merged.dispatchDate);
+    const stageAge = daysSince(merged.stageEnteredAt || (merged.funnel === "mm" ? merged.mmDate : merged.dispatchDate));
     const invoiceQty = toNumber(merged.invoiceQty || merged.qtyKg);
     const receivedQty = merged.receivedQty !== undefined ? toNumber(merged.receivedQty) : null;
     const shortageQty = receivedQty !== null ? Math.max(0, invoiceQty - receivedQty) : null;
@@ -332,8 +360,10 @@ async function computeState() {
       : "minor_variance";
     // Owner is controlPoc only — srPoc/brPoc are the buyer's/seller's own external contacts,
     // never our internal txn team, never a fallback "owner".
-    const owner = String(merged.controlPoc || "Unassigned").trim();
-    const paymentOwner = String(merged.paymentOwner || "").trim();
+    // Canonical spellings, so "Jithu/Rajeshwari" reads (and filters) as the same
+    // people as every other shipment they own — the pages match owners by name.
+    const owner = splitNames(merged.controlPoc).map(canonicalName).join("/") || "Unassigned";
+    const paymentOwner = splitNames(merged.paymentOwner).map(canonicalName).join("/");
     // Supplier margin: shipment-level override > standard 0.5% default. "No" locks it to 0.
     const marginApplies = merged.marginApplies || "pending";
     // `|| 0.5` would wrongly replace a genuine 0% override with the default
@@ -350,8 +380,31 @@ async function computeState() {
     const todayStr = new Date().toISOString().slice(0, 10);
     const dueSoon = !!(latestFollowUp && latestFollowUp.dueDate && latestFollowUp.dueDate <= todayStr);
     const cause = deriveCause({ funnel: merged.funnel, blockReason: merged.blockReason, issueType: merged.issueType, controlPoc: merged.controlPoc, paidProofPending, paymentRisk: pr, missingDocs, dueSoon });
+    // Closed = the money is in and proven: paid in full with the UTR verified.
+    const closed = merged.funnel === "completed" && paymentStatus === "paid" && docs.utr === "ok";
+    const stageSlaDays = fields.STAGE_SLA[merged.funnel] || null;
+    // What needs a person today. Drives the Shipments grouping and every red/amber flag.
+    const attention = [];
+    if (merged.funnel !== "rejected" && !closed) {
+      if (stageSlaDays && stageAge !== null && stageAge > stageSlaDays) attention.push("stage_days");
+      if (dueSoon) attention.push("followup_due");
+      const due = asDate(merged.dueDate);
+      if (toNumber(merged.balance) > 1 && due && due < asDate(todayStr)) attention.push("payment_late");
+    }
+    // TDS the buyer evidently withheld when nobody has entered it yet.
+    const net = toNumber(merged.netPayable);
+    const impliedTds = merged.itTds === "" && merged.gstTds === "" && net > 0 && toNumber(merged.paidAmount) > 0
+      ? Math.max(0, Math.round((net - toNumber(merged.paidAmount) - Math.max(0, toNumber(merged.balance))) * 100) / 100)
+      : 0;
     return {
       ...merged,
+      calc: auto.calc,
+      impliedTds,
+      attention,
+      closed,
+      stageSlaDays,
+      lastUpdateAt: events.length ? events[events.length - 1].createdAt : null,
+      lastComment,
       docs,
       owner,
       paymentOwner,
@@ -855,7 +908,9 @@ function securityHeaders() {
 }
 
 // Allowlists + length limits for update events (never trust client shape).
-const UPDATE_TYPES = new Set(["stage", "doc", "note", "owner", "followup", "qty", "payment_detail", "issue", "invoice_detail", "margin", "poc_contact", "detail"]);
+const UPDATE_TYPES = new Set(["stage", "doc", "note", "owner", "followup", "qty", "payment_detail", "issue", "invoice_detail", "margin", "poc_contact", "detail", "field"]);
+// One Save on the shipment page sends its changes together; cap the batch size.
+const MAX_BATCH_EVENTS = 150;
 const DOC_VALUES = new Set(["missing", "pending", "ok", "na"]);
 const QTY_KEYS = new Set(["invoiceQty", "receivedQty"]);
 const PAYMENT_DETAIL_KEYS = new Set(["tds"]);
@@ -931,6 +986,11 @@ function validateUpdate(p) {
   } else if (type === "poc_contact") {
     if (!POC_CONTACT_KEYS.has(p.key)) return { error: "invalid poc_contact key" };
     out.key = p.key; out.value = clampStr(p.value, 300);
+  } else if (type === "field") {
+    // Any column of the tracker sheet; lib/fields.js is the allowlist.
+    const checked = fields.validateField(p.key, p.value);
+    if (checked.error) return { error: checked.error };
+    out.key = String(p.key); out.value = checked.value;
   } else if (type === "detail") {
     if (!DETAIL_KEYS.has(p.key)) return { error: "invalid detail key" };
     if (DETAIL_DATE_KEYS.has(p.key)) {
@@ -978,7 +1038,7 @@ function createEvent(payload) {
     dueDate: payload.dueDate || "",
     status: payload.status || "open",
     reason: payload.reason || "",
-    createdAt: new Date().toISOString(),
+    createdAt: (payload.createdAt instanceof Date ? payload.createdAt : new Date()).toISOString(),
   };
 }
 
@@ -1083,6 +1143,8 @@ async function handleApi(req, res, url) {
       user,
       users: (authGateOn() && user.role !== "admin") ? [] : users,
       ownerOptions: [...new Set(users.map((u) => u.name).filter(Boolean))],
+      fieldSections: fields.FIELD_SECTIONS,
+      stageSla: fields.STAGE_SLA,
     });
   }
   if (req.method === "GET" && url.pathname.startsWith("/api/shipments/")) {
@@ -1114,12 +1176,27 @@ async function handleApi(req, res, url) {
     const target = state.shipments.find((s) => s.shipmentId === shipmentId);
     if (!target) return sendJson(res, { error: "Shipment not found" }, 404);
     if (!canEditShipment(target, actingUser)) return sendJson(res, { error: "You can only update shipments assigned to you" }, 403);
-    const checked = validateUpdate(payload);
-    if (checked.error) return sendJson(res, { error: checked.error }, 400);
-    const event = createEvent({ ...checked.value, shipmentId, actor: actingUser.name, actorEmail: actingUser.email });
-    await store.addUpdate(event);
+    // A single event, or { events: [...] } for one Save that changed several
+    // things. A batch is all-or-nothing: every event is validated before any is
+    // written, and they get strictly increasing timestamps so the timeline keeps
+    // their order and shows them as one entry.
+    const batch = Array.isArray(payload.events) ? payload.events : [payload];
+    if (!batch.length || batch.length > MAX_BATCH_EVENTS) return sendJson(res, { error: "Invalid batch size" }, 400);
+    const checkedAll = [];
+    for (const item of batch) {
+      const checked = validateUpdate(item && typeof item === "object" ? item : {});
+      if (checked.error) return sendJson(res, { error: checked.error }, 400);
+      checkedAll.push(checked.value);
+    }
+    const start = Date.now();
+    const written = [];
+    for (let i = 0; i < checkedAll.length; i++) {
+      const event = createEvent({ ...checkedAll[i], shipmentId, actor: actingUser.name, actorEmail: actingUser.email, createdAt: new Date(start + i) });
+      await store.addUpdate(event);
+      written.push(event);
+    }
     invalidateState(); // writer must observe its own change on the next read
-    return sendJson(res, { ok: true, event });
+    return sendJson(res, Array.isArray(payload.events) ? { ok: true, events: written } : { ok: true, event: written[0] });
   }
   if (req.method === "POST" && url.pathname === "/api/shipments") {
     // New-shipment intake: only the shipment ID is generated — every other field
@@ -1144,7 +1221,7 @@ async function handleApi(req, res, url) {
     const controlPoc = controlPocIn || pickLeastLoadedOwner(state.shipments, users);
     const row = {
       shipmentId,
-      orderId: "",
+      orderId: clampStr(payload.orderId, 40).trim(),
       vertical: clampStr(payload.vertical, 60),
       material: clampStr(payload.material, 200),
       seller: clampStr(payload.seller, 200),
@@ -1158,8 +1235,12 @@ async function handleApi(req, res, url) {
       stageRaw: "MM", funnel: "mm",
       qtyKg: clampStr(payload.qtyKg, 20),
       materialValue: clampStr(payload.materialValue, 20),
-      gst: "0", total: "0", debitNote: "0", netPayable: "0", paidAmount: "0", balance: "0",
+      // Blank, not "0": the auto columns (GST, totals, balance) fill themselves
+      // from the material value, and a stored 0 would read as a typed-in figure.
+      gst: "", total: "", debitNote: "", netPayable: "", paidAmount: "", balance: "",
       paymentStatus: "", docs: {}, remarks: "",
+      mmDate: new Date().toISOString().slice(0, 10),
+      stageEnteredAt: new Date().toISOString(),
     };
     const inserted = await store.addShipment(row);
     invalidateState();

@@ -404,3 +404,6 @@ textarea { min-height: 62px; resize: vertical; }
   .list.cols-2, .list.cols-4, .dwell-list, .assoc-grid, .detail-grid { grid-template-columns: 1fr; }
   .doc-row { grid-template-columns: 1fr; }
 }
+
+@media (max-width: 600px) { .header-meta { flex-wrap: wrap; min-width: 0; } .app-header > * { min-width: 0; } }
+

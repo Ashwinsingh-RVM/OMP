@@ -1,0 +1,1328 @@
+[
+  {
+    "id": "order",
+    "stage": null,
+    "title": "Order",
+    "fields": [
+      {
+        "key": "orderId",
+        "label": "SO number",
+        "kind": "text",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "vertical",
+        "label": "Vertical",
+        "kind": "select",
+        "opts": [
+          [
+            "Plastic",
+            "Plastic"
+          ],
+          [
+            "Metal",
+            "Metal"
+          ],
+          [
+            "Paper",
+            "Paper"
+          ],
+          [
+            "Other",
+            "Other"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "month",
+        "label": "Transaction month",
+        "kind": "text",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "seller",
+        "label": "Seller",
+        "kind": "text",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "srPoc",
+        "label": "SR POC",
+        "kind": "text",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "sellerGstin",
+        "label": "Seller GSTIN",
+        "kind": "text",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "buyer",
+        "label": "Buyer",
+        "kind": "text",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "brPoc",
+        "label": "BR POC",
+        "kind": "text",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "buyerGstin",
+        "label": "Buyer GSTIN",
+        "kind": "text",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "businessSpoc",
+        "label": "Business team SPOC",
+        "kind": "text",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "material",
+        "label": "Material",
+        "kind": "text",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "hsn",
+        "label": "HSN",
+        "kind": "text",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "qtyKg",
+        "label": "Qty (in kgs)",
+        "kind": "number",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      }
+    ]
+  },
+  {
+    "id": "mm",
+    "stage": "mm",
+    "title": "Draft: match making & PO",
+    "fields": [
+      {
+        "key": "mmDate",
+        "label": "MM date",
+        "kind": "date",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "poStatus",
+        "label": "PO status",
+        "kind": "select",
+        "opts": [
+          [
+            "pending",
+            "Pending"
+          ],
+          [
+            "received",
+            "Received"
+          ],
+          [
+            "uploaded",
+            "Uploaded"
+          ],
+          [
+            "na",
+            "Not required"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "paymentTerms",
+        "label": "Payment terms",
+        "kind": "text",
+        "opts": null,
+        "hint": "Pick one or type your own, e.g. D+12",
+        "auto": false,
+        "suggest": [
+          "D+0",
+          "D+5",
+          "D+7",
+          "D+10",
+          "D+15",
+          "D+21",
+          "D+30",
+          "D+45",
+          "D+60",
+          "Advance"
+        ]
+      },
+      {
+        "key": "marginApplies",
+        "label": "Supplier margin applies",
+        "kind": "select",
+        "opts": [
+          [
+            "pending",
+            "Pending confirmation"
+          ],
+          [
+            "yes",
+            "Yes"
+          ],
+          [
+            "no",
+            "No"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "marginPctOverride",
+        "label": "Margin %",
+        "kind": "number",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      }
+    ]
+  },
+  {
+    "id": "invoice",
+    "stage": "predispatch",
+    "title": "Invoice & value",
+    "fields": [
+      {
+        "key": "invoiceNo",
+        "label": "Invoice number",
+        "kind": "text",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "invoiceDate",
+        "label": "Invoice date",
+        "kind": "date",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "invoiceQty",
+        "label": "Invoice qty (kgs)",
+        "kind": "number",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "materialValue",
+        "label": "Material value",
+        "kind": "money",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "gstRate",
+        "label": "GST %",
+        "kind": "number",
+        "opts": null,
+        "hint": "18 if blank",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "gst",
+        "label": "GST",
+        "kind": "money",
+        "opts": null,
+        "hint": "",
+        "auto": true,
+        "suggest": null
+      },
+      {
+        "key": "total",
+        "label": "Total",
+        "kind": "money",
+        "opts": null,
+        "hint": "",
+        "auto": true,
+        "suggest": null
+      },
+      {
+        "key": "dispatchDate",
+        "label": "Dispatch date",
+        "kind": "date",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "distance",
+        "label": "Distance (km)",
+        "kind": "number",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "ewbValidity",
+        "label": "E-way bill valid till",
+        "kind": "date",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      }
+    ]
+  },
+  {
+    "id": "dispatchChecks",
+    "stage": "predispatch",
+    "title": "Dispatch document checks",
+    "fields": [
+      {
+        "key": "orderSummaryDocs",
+        "label": "Order summary docs",
+        "kind": "yesno",
+        "opts": [
+          [
+            "yes",
+            "Yes"
+          ],
+          [
+            "no",
+            "No"
+          ],
+          [
+            "na",
+            "N/A"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "customerPo",
+        "label": "Customer PO",
+        "kind": "yesno",
+        "opts": [
+          [
+            "yes",
+            "Yes"
+          ],
+          [
+            "no",
+            "No"
+          ],
+          [
+            "na",
+            "N/A"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "dispatchAddressMatch",
+        "label": "Dispatch-from address",
+        "kind": "select",
+        "opts": [
+          [
+            "matched",
+            "Matched with MIP"
+          ],
+          [
+            "not_matched",
+            "Not matched with MIP"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "frontImage",
+        "label": "Front image",
+        "kind": "select",
+        "opts": [
+          [
+            "geotag",
+            "Geotag"
+          ],
+          [
+            "no_geotag",
+            "Without geotag"
+          ],
+          [
+            "missing",
+            "Not provided"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "backImage",
+        "label": "Back image",
+        "kind": "select",
+        "opts": [
+          [
+            "geotag",
+            "Geotag"
+          ],
+          [
+            "no_geotag",
+            "Without geotag"
+          ],
+          [
+            "missing",
+            "Not provided"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "distanceCheck",
+        "label": "Distance check",
+        "kind": "select",
+        "opts": [
+          [
+            "within",
+            "Within 25 km"
+          ],
+          [
+            "above",
+            "Above 25 km"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "emptyWeighment",
+        "label": "Empty weighment",
+        "kind": "yesno",
+        "opts": [
+          [
+            "yes",
+            "Yes"
+          ],
+          [
+            "no",
+            "No"
+          ],
+          [
+            "na",
+            "N/A"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "fullWeighment",
+        "label": "Full weighment",
+        "kind": "yesno",
+        "opts": [
+          [
+            "yes",
+            "Yes"
+          ],
+          [
+            "no",
+            "No"
+          ],
+          [
+            "na",
+            "N/A"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "hsnMatch",
+        "label": "HSN",
+        "kind": "select",
+        "opts": [
+          [
+            "matched",
+            "Matched"
+          ],
+          [
+            "not_matched",
+            "Not matched"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "invoiceType",
+        "label": "Seller invoice type",
+        "kind": "select",
+        "opts": [
+          [
+            "normal",
+            "Normal invoice"
+          ],
+          [
+            "einvoice",
+            "E-invoice"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "eInvoiceApplicable",
+        "label": "E-invoice applicable",
+        "kind": "yesno",
+        "opts": [
+          [
+            "yes",
+            "Yes"
+          ],
+          [
+            "no",
+            "No"
+          ],
+          [
+            "na",
+            "N/A"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "docIssues",
+        "label": "Document issues at transaction",
+        "kind": "long",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "docIssuesResolved",
+        "label": "Resolved points",
+        "kind": "long",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "docIssueStatus",
+        "label": "Resolving status",
+        "kind": "select",
+        "opts": [
+          [
+            "open",
+            "Open"
+          ],
+          [
+            "resolved",
+            "Resolved"
+          ],
+          [
+            "na",
+            "N/A"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "ticketBy",
+        "label": "Ticket created by",
+        "kind": "text",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "ticketOn",
+        "label": "Ticket created on",
+        "kind": "date",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "ticketClosed",
+        "label": "Ticket closed on",
+        "kind": "date",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "verifiedBy",
+        "label": "Verified by",
+        "kind": "text",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "verifiedDate",
+        "label": "Verified date",
+        "kind": "date",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "mailStatus",
+        "label": "Dispatch mail",
+        "kind": "select",
+        "opts": [
+          [
+            "sent",
+            "Mail sent"
+          ],
+          [
+            "not_sent",
+            "Not sent"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      }
+    ]
+  },
+  {
+    "id": "tracking",
+    "stage": "intransit",
+    "title": "Tracking",
+    "fields": [
+      {
+        "key": "fastag",
+        "label": "FASTag",
+        "kind": "yesno",
+        "opts": [
+          [
+            "yes",
+            "Yes"
+          ],
+          [
+            "no",
+            "No"
+          ],
+          [
+            "na",
+            "N/A"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "simTracking",
+        "label": "SIM tracking",
+        "kind": "yesno",
+        "opts": [
+          [
+            "yes",
+            "Yes"
+          ],
+          [
+            "no",
+            "No"
+          ],
+          [
+            "na",
+            "N/A"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "dispatchState",
+        "label": "Dispatch state",
+        "kind": "text",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "shipToState",
+        "label": "Ship-to state",
+        "kind": "text",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "vehicleExpDate",
+        "label": "ETA (expected reach)",
+        "kind": "date",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "trackingIssue",
+        "label": "Tracking issues",
+        "kind": "long",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      }
+    ]
+  },
+  {
+    "id": "reached",
+    "stage": "reached",
+    "title": "Reached",
+    "fields": [
+      {
+        "key": "vehicleActualDate",
+        "label": "Reached (actual)",
+        "kind": "date",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "vehiclePortalDate",
+        "label": "Reached (portal)",
+        "kind": "date",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "unloaded",
+        "label": "Unloaded",
+        "kind": "yesno",
+        "opts": [
+          [
+            "yes",
+            "Yes"
+          ],
+          [
+            "no",
+            "No"
+          ],
+          [
+            "na",
+            "N/A"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      }
+    ]
+  },
+  {
+    "id": "delivery",
+    "stage": "qc",
+    "title": "Delivery & POD",
+    "fields": [
+      {
+        "key": "deliveredActualDate",
+        "label": "Delivered (actual)",
+        "kind": "date",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "deliveredPortalDate",
+        "label": "Delivered (portal)",
+        "kind": "date",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "podReceived",
+        "label": "POD received",
+        "kind": "yesno",
+        "opts": [
+          [
+            "yes",
+            "Yes"
+          ],
+          [
+            "no",
+            "No"
+          ],
+          [
+            "na",
+            "N/A"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "podType",
+        "label": "POD document type",
+        "kind": "text",
+        "opts": null,
+        "hint": "e.g. Unloading weighslip",
+        "auto": false,
+        "suggest": null
+      }
+    ]
+  },
+  {
+    "id": "qc",
+    "stage": "qc",
+    "title": "QC, debit note & qty reco",
+    "fields": [
+      {
+        "key": "qcStatus",
+        "label": "QC",
+        "kind": "select",
+        "opts": [
+          [
+            "pending",
+            "Pending"
+          ],
+          [
+            "uploaded",
+            "Uploaded"
+          ],
+          [
+            "passed",
+            "Passed"
+          ],
+          [
+            "failed",
+            "Failed"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "dnStatus",
+        "label": "DN status",
+        "kind": "text",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "debitNote",
+        "label": "Debit note",
+        "kind": "money",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "dnGst",
+        "label": "DN GST",
+        "kind": "money",
+        "opts": null,
+        "hint": "",
+        "auto": true,
+        "suggest": null
+      },
+      {
+        "key": "totalDn",
+        "label": "Total DN",
+        "kind": "money",
+        "opts": null,
+        "hint": "",
+        "auto": true,
+        "suggest": null
+      },
+      {
+        "key": "dnRemarks",
+        "label": "DN remarks",
+        "kind": "long",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "mipQty",
+        "label": "MIP qty (kgs)",
+        "kind": "number",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "receivedQty",
+        "label": "Received qty – MIP (kgs)",
+        "kind": "number",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "pickedQty",
+        "label": "Picked qty – weighslip (kgs)",
+        "kind": "number",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "actualShortage",
+        "label": "Actual shortage (kgs)",
+        "kind": "number",
+        "opts": null,
+        "hint": "",
+        "auto": true,
+        "suggest": null
+      },
+      {
+        "key": "mipShortage",
+        "label": "Shortage in MIP (kgs)",
+        "kind": "number",
+        "opts": null,
+        "hint": "",
+        "auto": true,
+        "suggest": null
+      },
+      {
+        "key": "qtyRecoRemarks",
+        "label": "Qty reco remarks",
+        "kind": "long",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "qtyRecoStatus",
+        "label": "Qty reco status",
+        "kind": "select",
+        "opts": [
+          [
+            "open",
+            "Open"
+          ],
+          [
+            "resolved",
+            "Resolved"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      }
+    ]
+  },
+  {
+    "id": "payment",
+    "stage": "completed",
+    "title": "Payment",
+    "fields": [
+      {
+        "key": "netPayable",
+        "label": "Net payable",
+        "kind": "money",
+        "opts": null,
+        "hint": "",
+        "auto": true,
+        "suggest": null
+      },
+      {
+        "key": "tdsApplicable",
+        "label": "TDS applicable",
+        "kind": "select",
+        "opts": [
+          [
+            "both",
+            "IT + GST TDS"
+          ],
+          [
+            "it",
+            "IT TDS only"
+          ],
+          [
+            "gst",
+            "GST TDS only"
+          ],
+          [
+            "none",
+            "No TDS"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "itTds",
+        "label": "IT TDS",
+        "kind": "money",
+        "opts": null,
+        "hint": "0.1% of material value",
+        "auto": true,
+        "suggest": null
+      },
+      {
+        "key": "gstTds",
+        "label": "GST TDS",
+        "kind": "money",
+        "opts": null,
+        "hint": "2% of material value",
+        "auto": true,
+        "suggest": null
+      },
+      {
+        "key": "paidAmount",
+        "label": "Paid amount",
+        "kind": "money",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "balance",
+        "label": "Balance",
+        "kind": "money",
+        "opts": null,
+        "hint": "",
+        "auto": true,
+        "suggest": null
+      },
+      {
+        "key": "dueDate",
+        "label": "Due date",
+        "kind": "date",
+        "opts": null,
+        "hint": "delivered date + terms",
+        "auto": true,
+        "suggest": null
+      },
+      {
+        "key": "paymentDate",
+        "label": "Payment date",
+        "kind": "date",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "noOfPayments",
+        "label": "No. of payments",
+        "kind": "number",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "paymentStatus",
+        "label": "Payment status",
+        "kind": "select",
+        "opts": [
+          [
+            "Paid",
+            "Paid"
+          ],
+          [
+            "Partial",
+            "Partial"
+          ],
+          [
+            "Pending",
+            "Pending"
+          ],
+          [
+            "NA",
+            "N/A"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "paymentAdviceStatus",
+        "label": "Payment advice status",
+        "kind": "select",
+        "opts": [
+          [
+            "uploaded",
+            "Uploaded"
+          ],
+          [
+            "pending",
+            "Pending"
+          ],
+          [
+            "na",
+            "Not required"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "paymentAdviceSource",
+        "label": "Payment advice update source",
+        "kind": "text",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "updatedInSystem",
+        "label": "Updated in system",
+        "kind": "yesno",
+        "opts": [
+          [
+            "yes",
+            "Yes"
+          ],
+          [
+            "no",
+            "No"
+          ],
+          [
+            "na",
+            "N/A"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "detailsReceivedDate",
+        "label": "Details received date",
+        "kind": "date",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "detailsReceivedChannel",
+        "label": "Details received channel",
+        "kind": "select",
+        "opts": [
+          [
+            "email",
+            "Email"
+          ],
+          [
+            "whatsapp",
+            "WhatsApp"
+          ],
+          [
+            "call",
+            "Call"
+          ],
+          [
+            "portal",
+            "Portal"
+          ],
+          [
+            "other",
+            "Other"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "paymentTrackNote",
+        "label": "Payment track note",
+        "kind": "long",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "gstPayment",
+        "label": "GST payment",
+        "kind": "text",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "gstFilingStatus",
+        "label": "GST filing status",
+        "kind": "text",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "marginInvoiceStatus",
+        "label": "Margin invoice",
+        "kind": "select",
+        "opts": [
+          [
+            "not_raised",
+            "Not raised"
+          ],
+          [
+            "raised",
+            "Raised"
+          ],
+          [
+            "sent",
+            "Sent to supplier"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "completionDate",
+        "label": "Completion date",
+        "kind": "date",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      },
+      {
+        "key": "paymentDoneConfirmed",
+        "label": "Payment done",
+        "kind": "yesno",
+        "opts": [
+          [
+            "yes",
+            "Yes"
+          ],
+          [
+            "no",
+            "No"
+          ],
+          [
+            "na",
+            "N/A"
+          ]
+        ],
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      }
+    ]
+  },
+  {
+    "id": "issues",
+    "stage": null,
+    "title": "Issues",
+    "fields": [
+      {
+        "key": "numberOfIssues",
+        "label": "Number of issues",
+        "kind": "number",
+        "opts": null,
+        "hint": "",
+        "auto": false,
+        "suggest": null
+      }
+    ]
+  }
+]

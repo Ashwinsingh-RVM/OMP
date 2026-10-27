@@ -7,8 +7,11 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700&display=swap" />
+  <!-- base design system, then the Shipments page, then the Lumen re-skin (last, so it wins) -->
   <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/orders.css" />
+  <link rel="stylesheet" href="/lumen.css" />
 </head>
 <body>
   <header class="app-header">
@@ -16,7 +19,13 @@
       <div class="brand-mark"><img src="/recykal-mark.png" alt="Recykal" /></div>
       <div class="brand-copy"><span>Recykal · Open Marketplace</span><h1>OMP CRM</h1></div>
     </div>
-    <div></div>
+    <div class="l-center">
+      <button class="l-search" id="lumenSearch" type="button" aria-label="Search shipments and pages">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <span>Search shipment, buyer, seller…</span><kbd>Ctrl K</kbd>
+      </button>
+      <span class="l-live" title="Live data"><i></i>Live · <b id="lumenClock">--:--</b></span>
+    </div>
     <div class="header-meta">
       <!-- Dev-only identity picker; replaced by #whoAmI once real auth is on. -->
       <label class="login-label" id="userPicker">Signed in as <select id="userSelect"></select></label>
@@ -30,52 +39,39 @@
     </div>
   </header>
 
-  <nav class="top-tabs">
-    <button class="view-tab active" data-view="overview">Overview</button>
-    <button class="view-tab" data-view="work">My Work</button>
-    <button class="view-tab" data-view="crm">Shipment CRM</button>
-    <button class="view-tab" data-view="pipeline">Pipeline</button>
-    <button class="view-tab" data-view="insights" data-tier="staff">Why Pending</button>
-    <button class="view-tab" data-view="trends" data-tier="staff">Trends</button>
-    <button class="view-tab" data-view="aging" data-tier="staff">Stage Aging</button>
-    <button class="view-tab" data-view="pipehealth" data-tier="staff">Pipeline Health</button>
-    <button class="view-tab" data-view="owners" data-tier="staff">Owner Performance</button>
-    <button class="view-tab" data-view="finance" data-tier="staff">Finance</button>
-    <button class="view-tab" data-view="team" data-tier="admin">Team &amp; PINs</button>
-    <button class="view-tab" data-view="activity" data-tier="owner">Activity</button>
-  </nav>
-
-  <main class="page">
-    <section class="page-view active" id="view-overview"></section>
-    <section class="page-view" id="view-work"></section>
-    <section class="page-view" id="view-crm"></section>
-    <section class="page-view" id="view-pipeline"></section>
-    <section class="page-view" id="view-insights"></section>
-    <section class="page-view" id="view-trends"></section>
-    <section class="page-view" id="view-aging"></section>
-    <section class="page-view" id="view-pipehealth"></section>
-    <section class="page-view" id="view-owners"></section>
-    <section class="page-view" id="view-finance"></section>
-    <section class="page-view" id="view-team"></section>
-    <section class="page-view" id="view-activity"></section>
-  </main>
+  <!-- Main content on the left, the menu on the right (a bottom bar on phones). -->
+  <div class="shell">
+    <main class="page">
+      <section class="l-hero" id="lumenHero" hidden aria-label="Overview"></section>
+      <section class="page-view active" id="view-orders"></section>
+      <section class="page-view" id="view-sheet"></section>
+      <section class="page-view" id="view-pipeline"></section>
+      <section class="page-view" id="view-dashboard"></section>
+      <section class="page-view" id="view-team"></section>
+      <section class="page-view" id="view-activity"></section>
+    </main>
+    <nav class="side-nav" aria-label="Main">
+      <button class="view-tab active" data-view="orders"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h9"/></svg><span>Shipments</span></button>
+      <button class="view-tab" data-view="sheet"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3.5" width="14" height="13" rx="2"/><path d="M3 8h14M3 12.5h14M8 3.5v13"/></svg><span>Sheet</span></button>
+      <button class="view-tab" data-view="pipeline"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3.5" width="4" height="13" rx="1.2"/><rect x="8" y="3.5" width="4" height="9" rx="1.2"/><rect x="13.5" y="3.5" width="4" height="11" rx="1.2"/></svg><span>Pipeline</span></button>
+      <button class="view-tab" data-view="dashboard"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 16V9M8.7 16V4M13.3 16v-5M18 16H2"/></svg><span>Dashboard</span></button>
+      <button class="view-tab" data-view="team" data-tier="admin"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="7.5" cy="7" r="3"/><path d="M2.5 16c.6-3 2.6-4.5 5-4.5s4.4 1.5 5 4.5"/><circle cx="14.2" cy="8" r="2.2"/><path d="M13.6 11.6c2 .2 3.4 1.6 3.9 4"/></svg><span>Team &amp; PINs</span></button>
+      <!-- Owner-only: sign-ins and every change across shipments (gated server-side too). -->
+      <button class="view-tab" data-view="activity" data-tier="owner" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 10h3l2-5 3 10 2-5h5"/></svg><span>Activity</span></button>
+      <div class="l-rail-foot" id="lumenGreet"><b>Namaste 👋</b>Press <kbd>Ctrl K</kbd> to jump to any shipment.</div>
+    </nav>
+  </div>
 
   <div class="toast-wrap" id="toastWrap"></div>
 
-  <!-- shared core first, then one file per page, then boot -->
+  <!-- shared core first, then one file per page, then boot, then the Lumen UX layer -->
   <script src="/core.js"></script>
-  <script src="/pages/overview.js"></script>
-  <script src="/pages/work.js"></script>
-  <script src="/pages/crm.js"></script>
+  <script src="/pages/orders.js"></script>
   <script src="/pages/pipeline.js"></script>
-  <script src="/pages/insights.js"></script>
-  <script src="/pages/trends.js"></script>
-  <script src="/pages/aging.js"></script>
-  <script src="/pages/pipehealth.js"></script>
-  <script src="/pages/owners.js"></script>
-  <script src="/pages/finance.js"></script>
+  <script src="/pages/dashboard.js"></script>
   <script src="/pages/team.js"></script>
   <script src="/pages/activity.js"></script>
   <script src="/boot.js"></script>
+  <script src="/lumen.js"></script>
 </body>
 </html>

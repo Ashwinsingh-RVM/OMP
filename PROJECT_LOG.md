@@ -26,12 +26,16 @@ A CRM-style ops dashboard. Ops associates follow each shipment/transaction and p
 ## 3. Architecture
 ```
 public/
-  index.html      — shell (header, tabs, per-page containers)
+  index.html      — shell (header + Ctrl K search, side menu / phone bottom bar, per-page containers)
   core.js         — shared state, data layer, helpers, page registry, boot
   boot.js         — boot entry (split out for CSP)
+  lumen.js        — UX layer: clock, greeting, hero banner, Ctrl K command palette, count-up
   styles.css      — design system (Recykal green/gold, Poppins + JetBrains Mono)
-  pages/          — one file per page: overview, work, crm, pipeline, insights, trends
+  orders.css      — Shipments / Sheet / shipment page styles
+  lumen.css       — light re-skin, loaded last
+  pages/          — one file per page: orders (Shipments + Sheet), pipeline, dashboard, team, activity
 server.js         — zero-dependency Node http server + rate limiting + auth gate
+lib/fields.js     — sheet column schema (field-sections.json), field validation, auto-column formulas
 db/               — store.js (JSON ⇄ Postgres auto-switch), schema.sql, init.js
 auth/google.js    — Google OAuth (dormant — not enabled yet)
 data/             — shipments.json (130 seed), updates.json (event timeline)
@@ -41,6 +45,15 @@ data/             — shipments.json (130 seed), updates.json (event timeline)
 ---
 
 ## 4. Pages / features built
+**2026-10-27 redesign** — the 12 tabs below were replaced by five, matching the OMP CRM demo:
+- **Shipments** — table grouped Needs attention / Moving / Closed, quick filters (follow-up due, payment late, stage delayed), New shipment. A row opens a full shipment page: seller → buyer route with the truck at its stage, a per-stage **checklist** (that stage's docs + sheet columns, blocker, required comment, Save / Move to next / Reject), a **Full sheet** tab with every tracker column, payment + people cards, grouped history.
+- **Sheet** — every shipment × every column, CSV download.
+- **Pipeline** — stage funnel with share over each stage's day limit; pick a stage to list it.
+- **Dashboard** — one summary; every number opens Shipments filtered to those rows.
+- **Team & PINs** (admin), **Activity** (owner only).
+- Server: `field` events for any sheet column, batched saves (`{ events: [...] }`, all-or-nothing), auto columns (GST 18%, totals, DN GST, net payable, IT TDS 0.1% / GST TDS 2%, balance, due date = delivered + terms, shortages) with manual override, per-shipment `attention` / `closed` / `stageSlaDays` (Draft 3, Dispatched 1, In transit 5, Reached 2, Delivery 3 days). Stage labels renamed: Draft, Dispatched, In Transit, Reached, Delivery, Payment.
+
+Earlier tabs (pre-redesign):
 - **Overview** — personal KPI console + emoji pastel funnel + today's work + priority queue (scoped to your own shipments)
 - **My Work** — your queues + performance snapshot (own-scoped)
 - **Shipment CRM** — filterable list + cockpit: stage stepper (pinpoints), Update Stage + **reason dropdown** (why stuck), **Payment box** (invoice/due date, days overdue, paid/balance), **Document Verification** (color dropdown per doc — status only, NO file upload), follow-up, timeline; read-only for shipments you don't own

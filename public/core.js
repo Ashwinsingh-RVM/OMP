@@ -10,7 +10,7 @@ const OMP = (() => {
     selectedId: null, selected: null, timeline: [],
     filters: { search: '', stage: '', risk: '', cause: '', owner: '' },
     pipelineStage: '',
-    view: 'overview',
+    view: 'orders',
     user: { name: 'Local Admin', email: 'local@recykal.test', role: 'admin' },
   };
 
@@ -127,7 +127,8 @@ const OMP = (() => {
   // access is open to everyone now — this is a workload view, not a
   // permission boundary — so it compares names, not the (always-true) canEdit
   // flag. Admin -> all.
-  const myShipments = () => state.shipments.filter(s => nameEq(s.owner, state.user.name));
+  // Co-owned ("A/B") counts for each named owner.
+  const myShipments = () => state.shipments.filter(s => String(s.owner || '').split('/').some(n => nameEq(n, state.user.name)));
   const isScoped = () => state.user && state.user.role !== 'admin';
   function filtered() {
     const f = state.filters;
@@ -230,7 +231,7 @@ const OMP = (() => {
   }
   async function loadBootstrap(email) {
     const d = await api('/api/bootstrap?user=' + encodeURIComponent(email || state.user.email));
-    Object.assign(state, { shipments: d.shipments, summary: d.summary, stages: d.stages, docs: d.docs, users: d.users || [], ownerOptions: d.ownerOptions || [], user: d.user || state.user });
+    Object.assign(state, { shipments: d.shipments, summary: d.summary, stages: d.stages, docs: d.docs, users: d.users || [], ownerOptions: d.ownerOptions || [], fieldSections: d.fieldSections || [], stageSla: d.stageSla || {}, user: d.user || state.user });
     localStorage.setItem('ompUser', state.user.email);
   }
   async function selectShipment(id, rerender = true) {
@@ -267,7 +268,7 @@ const OMP = (() => {
     document.querySelectorAll('.view-tab[data-tier="admin"]').forEach(b => b.hidden = !isAdmin);
     document.querySelectorAll('.view-tab[data-tier="owner"]').forEach(b => b.hidden = !isOwner);
     const activeHidden = document.querySelector('.view-tab.active[hidden]');
-    if (activeHidden) setView('overview');
+    if (activeHidden) setView('orders');
   }
   function setView(view) {
     state.view = view;
@@ -276,7 +277,7 @@ const OMP = (() => {
     const el = document.getElementById('view-' + view); if (el) el.classList.add('active');
     renderActive();
   }
-  async function openInCrm(id) { await selectShipment(id, false); setView('crm'); }
+  async function openInCrm(id) { await selectShipment(id, false); setView('orders'); }
   function renderActive() {
     const p = pages[state.view];
     const el = document.getElementById('view-' + state.view);
@@ -332,7 +333,7 @@ const OMP = (() => {
         }
       }
     } catch (e) { /* header links are optional — never block boot on it */ }
-    document.querySelectorAll('.view-tab').forEach(b => b.onclick = () => setView(b.dataset.view));
+    document.querySelectorAll('.view-tab[data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
     applyRoleTabVisibility();
     const first = ranked(filtered())[0] || state.shipments[0];
     if (first) await selectShipment(first.shipmentId, false);
@@ -341,9 +342,10 @@ const OMP = (() => {
 
   return {
     state, pages, registerPage,
-    helpers: { esc, title, today, num, money, shortMoney, DOC_GROUPS, DOC_STATES, REASONS, REJECTION_REASONS, ISSUE_TYPES, issueTypeLabel, reasonLabel, STAGE_META, CAUSE_LABELS, causeLabel, isDue, needs, score, ranked, filtered, myShipments, isScoped, actionReason, payMini, docChip, reasonChip, proofChip, stagePill, paymentPill, eventHtml, stageHelp, funnelFlow, stageCounts, avg },
+    helpers: { esc, title, today, num, money, shortMoney, DOC_GROUPS, DOC_STATES, REASONS, REJECTION_REASONS, ISSUE_TYPES, issueTypeLabel, reasonLabel, STAGE_META, CAUSE_LABELS, causeLabel, isDue, needs, score, ranked, filtered, myShipments, isScoped, nameEq, actionReason, payMini, docChip, reasonChip, proofChip, stagePill, paymentPill, eventHtml, stageHelp, funnelFlow, stageCounts, avg },
     actions: { api, loadBootstrap, selectShipment, postUpdate, toast, setView, openInCrm, renderActive, renderAll },
     boot,
   };
 })();
 window.OMP = OMP;
+
